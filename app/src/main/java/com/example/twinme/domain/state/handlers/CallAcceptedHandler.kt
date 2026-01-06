@@ -11,12 +11,16 @@ import com.example.twinme.domain.state.StateResult
  * CALL_ACCEPTED 상태 핸들러 (원본 APK 방식)
  *
  * 동작:
- * 1. 콜 수락 완료 후 즉시 WAITING_FOR_CALL로 리셋
- * 2. eligibleCall 초기화는 changeState에서 자동 처리됨
- * 3. 500ms 지연 후 다음 콜 대기 시작 (원본 APK 라인 2523: 0x1f4)
+ * 1. 콜 수락 완료 후 엔진 일시정지 (pause)
+ * 2. IDLE 상태로 전환
+ * 3. 사용자가 수동으로 resume() 호출해야 다음 콜 대기 시작
  *
- * 원본 APK 흐름:
- * WAITING_FOR_CONFIRM → CALL_ACCEPTED (500ms 대기) → WAITING_FOR_CALL
+ * 원본 APK 흐름 (MacroEngine.smali 라인 1347-1378):
+ * WAITING_FOR_CONFIRM → CALL_ACCEPTED → pause() 호출 → IDLE (종료 상태 유지)
+ *
+ * ⚠️ 이전 잘못된 구현:
+ * - MacroEngine.smali 라인 1702-1708 참조는 **FALSE**
+ * - 실제 원본은 라인 1347-1378: SUCCESS 상태에서 pause() + IDLE 전환
  */
 class CallAcceptedHandler : StateHandler {
     companion object {
@@ -26,15 +30,14 @@ class CallAcceptedHandler : StateHandler {
     override val targetState = CallAcceptState.CALL_ACCEPTED
 
     override fun handle(node: AccessibilityNodeInfo, context: StateContext): StateResult {
-        Log.d(TAG, "콜 수락 완료 → WAITING_FOR_CALL로 자동 리셋")
+        Log.d(TAG, "✅ 콜 수락 완료! → 엔진 일시정지 (pause) + IDLE 전환")
 
-        // ⭐ 원본 APK 방식: 500ms 대기 후 자동으로 다음 콜 대기 상태로 전환
-        // 원본: MacroEngine.smali 라인 1702-1708
-        // - CALL_ACCEPTED 상태 진입 시 0x1f4 (500ms) 지연
-        // - 지연 후 자동으로 WAITING_FOR_CALL로 전환
-        return StateResult.Transition(
-            CallAcceptState.WAITING_FOR_CALL,
-            "콜 수락 완료 - 다음 콜 대기"
+        // ⭐ 원본 APK 방식: MacroEngine.smali 라인 1347-1378
+        // .line 288: invoke-virtual {v0}, Lorg/twinlife/device/android/twinme/MacroEngine;->pause()V
+        // .line 289: sget-object v1, Lorg/twinlife/device/android/twinme/MacroEngine$MacroState;->IDLE:...
+        return StateResult.PauseAndTransition(
+            CallAcceptState.IDLE,
+            "콜 수락 완료 - 엔진 일시정지"
         )
     }
 }

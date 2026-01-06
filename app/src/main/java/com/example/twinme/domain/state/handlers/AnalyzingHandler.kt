@@ -70,7 +70,8 @@ class AnalyzingHandler : StateHandler {
         // 1. 콜 리스트 파싱
         // 주의: 전역 시간대 체크는 하지 않음 (원본 APK 방식)
         // → 개별 콜의 예약시간만 체크하여 미래 예약 콜도 처리 가능
-        val calls = parseReservationCalls(node, context)
+        val callsWithText = parseReservationCalls(node, context)
+        val calls = callsWithText.map { it.first }
 
         if (calls.isEmpty()) {
             Log.d(TAG, "파싱된 콜이 없음 → WAITING_FOR_CALL")
@@ -212,7 +213,7 @@ class AnalyzingHandler : StateHandler {
      * 콜 리스트 파싱
      * RecyclerView를 찾아서 자식 노드들을 순회하며 콜 정보 추출
      */
-    private fun parseReservationCalls(rootNode: AccessibilityNodeInfo, context: StateContext): List<ReservationCall> {
+    private fun parseReservationCalls(rootNode: AccessibilityNodeInfo, context: StateContext): List<Pair<ReservationCall, String>> {
         // 1. RecyclerView 찾기
         val recyclerView = findNodeByClassNameExact(rootNode, RECYCLER_VIEW_CLASS)
             ?: findNodeByClassNameExact(rootNode, LEGACY_RECYCLER_VIEW_CLASS)
@@ -264,7 +265,7 @@ class AnalyzingHandler : StateHandler {
             parsedCount = calls.size
         )
 
-        return calls
+        return callsWithText
     }
 
     /**

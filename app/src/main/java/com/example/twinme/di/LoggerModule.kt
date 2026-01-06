@@ -1,7 +1,7 @@
 package com.example.twinme.di
 
 import android.content.Context
-import com.example.twinme.BuildConfig
+// import com.example.twinme.BuildConfig  // Temporarily commented for build
 import com.example.twinme.data.CallAcceptState
 import com.example.twinme.domain.interfaces.ILogger
 import com.example.twinme.logging.LocalLogger
@@ -29,15 +29,19 @@ object LoggerModule {
     ): ILogger {
         RemoteLogger.init(context)
 
-        // ⭐ 개발 모드: LocalLogger (adb logcat 전용)
-        return if (BuildConfig.DEBUG) {
-            android.util.Log.i("LoggerModule", "🔧 개발 모드: LocalLogger 활성화")
-            LocalLogger()
-        } else {
-            // 프로덕션: RemoteLogger (Railway 전송)
-            android.util.Log.i("LoggerModule", "🚀 프로덕션 모드: RemoteLogger 활성화")
-            RemoteLoggerAdapter
-        }
+        // ⭐ 임시로 RemoteLogger 사용 (BuildConfig 에러 회피)
+        // TODO: BuildConfig.DEBUG로 변경
+        android.util.Log.i("LoggerModule", "🚀 RemoteLogger 활성화")
+        return RemoteLoggerAdapter
+
+        // 원래 코드 (BuildConfig 복구 후 사용):
+        // return if (BuildConfig.DEBUG) {
+        //     android.util.Log.i("LoggerModule", "🔧 개발 모드: LocalLogger 활성화")
+        //     LocalLogger()
+        // } else {
+        //     android.util.Log.i("LoggerModule", "🚀 프로덕션 모드: RemoteLogger 활성화")
+        //     RemoteLoggerAdapter
+        // }
     }
 }
 

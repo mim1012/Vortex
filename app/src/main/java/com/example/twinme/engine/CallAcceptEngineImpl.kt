@@ -67,6 +67,9 @@ class CallAcceptEngineImpl @Inject constructor(
     private val _isRunning = MutableStateFlow(false)
     override val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
 
+    private val _isPaused = MutableStateFlow(false)
+    override val isPaused: StateFlow<Boolean> = _isPaused.asStateFlow()
+
     private val _isAutoRefreshEnabled = MutableStateFlow(true)
     override val isAutoRefreshEnabled: StateFlow<Boolean> = _isAutoRefreshEnabled.asStateFlow()
 
@@ -161,6 +164,25 @@ class CallAcceptEngineImpl @Inject constructor(
     }
 
     /**
+     * 엔진 일시정지 (콜 수락 완료 시 자동 호출)
+     * 원본: MacroEngine.smali 라인 2486-2503의 isPaused 체크
+     */
+    override fun pause() {
+        Log.d(TAG, "엔진 일시정지 (pause) - 콜 수락 완료")
+        _isPaused.value = true
+    }
+
+    /**
+     * 엔진 재개 (사용자가 수동으로 재시작)
+     * 원본: MacroEngine.smali의 resume() 메서드
+     */
+    override fun resume() {
+        Log.d(TAG, "엔진 재개 (resume) - 다음 콜 대기 시작")
+        _isPaused.value = false
+        changeState(CallAcceptState.WAITING_FOR_CALL, "엔진 재개됨")
+    }
+
+    /**
      * AccessibilityService로부터 rootNode 수신
      * 메인 루프에서 사용할 rootNode를 캐시에 저장
      */
@@ -235,9 +257,15 @@ class CallAcceptEngineImpl @Inject constructor(
             // 원본: notifyButtonState(ACTIVE)
         }
 
-        // 4. isPaused 확인은 제거 (우리 구현에는 없음)
-        // 5. 상태 머신 한 번 실행 (원본 라인 2486-2523)
-        val delayMs = executeStateMachineOnce(rootNode)
+        // 4. ⭐ isPaused 확인 (원본 라인 2486-2503)
+        val delayMs = if (_isPaused.value) {
+            // 일시정지 중이면 상태 머신 실행 안 함, 500ms 대기
+            Log.v(TAG, "엔진 일시정지 중 - 상태 머신 실행 생략")
+            500L
+        } else {
+            // 5. 상태 머신 한 번 실행 (원본 라인 2486-2523)
+            executeStateMachineOnce(rootNode)
+        }
 
         // 6. 다음 실행 예약 (재귀!) (원본 라인 2523)
         scheduleNext(delayMs) { startMacroLoop() }
@@ -321,6 +349,12 @@ class CallAcceptEngineImpl @Inject constructor(
             }
             is StateResult.Error -> {
                 changeState(result.errorState, result.reason)
+            }
+            is StateResult.PauseAndTransition -> {
+                // ⭐ 원본 APK SUCCESS 상태 처리: pause() + IDLE 전환
+                Log.i(TAG, "PauseAndTransition: ${result.reason}")
+                pause()  // 엔진 일시정지
+                changeState(result.nextState, result.reason)
             }
             StateResult.NoChange -> {
                 // 상태 유지
