@@ -14,16 +14,26 @@ android {
         applicationId "com.example.twinme"
         minSdk 24
         targetSdk 34
-        versionCode 9
-        versionName "0.0.9"
+        versionCode 10
+        versionName "1.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        release {
+            storeFile file('release-keystore.jks')
+            storePassword 'vortex2024'
+            keyAlias 'vortex'
+            keyPassword 'vortex2024'
+        }
     }
 
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
         }
     }
     compileOptions {
@@ -43,6 +53,10 @@ dependencies {
 
     // Java 8+ API desugaring (java.time support)
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'
+
+    // Shizuku API (시스템 레벨 input tap)
+    implementation 'dev.rikka.shizuku:api:13.1.5'
+    implementation 'dev.rikka.shizuku:provider:13.1.5'
 
     // Hilt
     implementation 'com.google.dagger:hilt-android:2.50'

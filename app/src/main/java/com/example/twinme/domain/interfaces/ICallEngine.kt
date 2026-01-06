@@ -18,6 +18,12 @@ interface ICallEngine {
     fun resume()
     fun processNode(node: AccessibilityNodeInfo)
 
+    /**
+     * ⭐ 즉시 실행 모드: 이벤트 발생 시 상태 머신 즉시 실행
+     * 딜레이 없이 바로 처리 (테스트용)
+     */
+    fun executeImmediate(node: AccessibilityNodeInfo)
+
     // 자동 새로고침 설정
     fun setAutoRefreshEnabled(enabled: Boolean)
 }

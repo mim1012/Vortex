@@ -1,11 +1,16 @@
 package com.example.twinme.domain.state.handlers
 
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.accessibility.AccessibilityNodeInfo
 import com.example.twinme.data.CallAcceptState
 import com.example.twinme.domain.state.StateContext
 import com.example.twinme.domain.state.StateHandler
 import com.example.twinme.domain.state.StateResult
+import java.util.Random
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * WAITING_FOR_CONFIRM 상태 핸들러
@@ -109,37 +114,17 @@ class WaitingForConfirmHandler : StateHandler {
             return StateResult.NoChange
         }
 
-        // ⭐ btn_call_accept 버튼이 보이면 다이얼로그가 아직 안 나타남 → 재클릭 시도
+        // ⭐⭐⭐ D3/d4 쓰로틀링 회피:
+        // btn_call_accept가 보이면 다이얼로그가 아직 안 나타난 것
+        // performAction 호출 금지! (d4 쓰로틀 트리거됨)
+        // 그냥 대기하고 다음 사이클에서 btn_positive 확인
         val buttonId = confirmButton.viewIdResourceName ?: ""
         if (buttonId.contains("btn_call_accept")) {
-            Log.w(TAG, "⚠️ btn_call_accept 발견 - 확인 다이얼로그 미출현 → 재클릭 시도")
+            Log.w(TAG, "⚠️ btn_call_accept 발견 - 다이얼로그 대기 중 (재클릭 금지!)")
+            Log.d(TAG, "💡 d4() 쓰로틀 회피: performAction 호출 안 함")
 
-            // btn_call_accept 다시 클릭
-            val bounds = android.graphics.Rect()
-            confirmButton.getBoundsInScreen(bounds)
-            val centerX = bounds.centerX().toFloat()
-            val centerY = bounds.centerY().toFloat()
-
-            // 1차: performAction 시도 (더 신뢰성 높음)
-            var reClickSuccess = false
-            if (confirmButton.isClickable) {
-                reClickSuccess = confirmButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                Log.d(TAG, "btn_call_accept performAction 결과: $reClickSuccess")
-            }
-
-            // 2차: performAction 실패 시 제스처 클릭
-            if (!reClickSuccess) {
-                reClickSuccess = context.performGestureClick(centerX, centerY)
-                Log.d(TAG, "btn_call_accept 제스처 재클릭 결과: $reClickSuccess (좌표: $centerX, $centerY)")
-            }
-
-            // 다이얼로그 로딩 대기 (500ms)
-            try {
-                Thread.sleep(500)
-            } catch (e: InterruptedException) {
-                // ignore
-            }
-
+            // ⭐ 아무 것도 하지 않고 대기 - d4()가 다이얼로그 띄울 시간 줌
+            // 최소 1.2초 이상 대기 필요 (d4 쓰로틀 = 1초)
             return StateResult.NoChange  // 다음 사이클에서 다이얼로그 확인
         }
 
@@ -158,34 +143,39 @@ class WaitingForConfirmHandler : StateHandler {
         val nodeDesc = "Button{id=${confirmButton.viewIdResourceName}, text=${confirmButton.text}, clickable=${confirmButton.isClickable}, bounds=$bounds}"
         Log.i(TAG, "6️⃣ 🎯 [버튼 결정] method=$searchMethod, node=$nodeDesc")
 
-        // 4. 클릭 시도 - 제스처 클릭 우선 (performAction이 작동 안 하는 경우 대비)
+        // 4. 클릭 시도 - 랜덤 지연 + fresh node + performAction
         Log.d(TAG, "수락 확인 버튼 클릭 시도 (검색 방법: $foundBy, 좌표: $centerX, $centerY)")
         val clickStartTime = System.currentTimeMillis()
 
-        // 4-1. 제스처 클릭 먼저 시도 (좌표 기반, 더 확실함)
-        var success = context.performGestureClick(centerX, centerY)
-        var clickMethod = "dispatchGesture"
+        // ⭐ 인간적인 랜덤 지연 (50-150ms)
+        val randomDelay = Random().nextInt(100) + 50
+        Log.d(TAG, "🎲 랜덤 지연: ${randomDelay}ms")
+        Thread.sleep(randomDelay.toLong())
 
-        if (success) {
-            Log.d(TAG, "✅ 제스처 클릭 전송됨")
-        } else {
-            // 4-2. 실패 시 performAction 시도
-            Log.w(TAG, "제스처 클릭 실패 → performAction 시도")
+        // ⭐ 노드 refresh
+        val refreshed = confirmButton.refresh()
+        Log.d(TAG, "🔄 노드 refresh: $refreshed")
+
+        // ⭐ performAction 1차 시도
+        var success = confirmButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        Log.d(TAG, "✅ performAction 1차 결과: $success")
+
+        // 실패 시 FOCUS 후 재시도
+        if (!success) {
+            Log.w(TAG, "performAction 1차 실패 → FOCUS 후 재시도")
+            confirmButton.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+            Thread.sleep(50)
             success = confirmButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            clickMethod = "performAction"
-            if (success) {
-                Log.d(TAG, "✅ performAction 클릭 성공")
-            }
+            Log.d(TAG, "✅ performAction 2차 결과 (focus 후): $success")
         }
 
-        Log.d(TAG, "클릭 방법: $clickMethod, 결과: $success")
         val elapsedMs = System.currentTimeMillis() - clickStartTime
+        Log.d(TAG, "클릭 방법: performAction, 결과: $success, elapsed=${elapsedMs}ms")
 
-        // 5. 클릭 결과 로깅 (검색 방법 포함)
-        // ⭐ Phase 4: logNodeClick → logAcceptStep으로 변경, callKey 추가
+        // 5. 클릭 결과 로깅
         context.logger.logAcceptStep(
             step = 3,
-            stepName = "WAITING_FOR_CONFIRM",  // LocalLogger가 인식할 수 있는 이름
+            stepName = "WAITING_FOR_CONFIRM",
             targetId = if (foundBy == "view_id") CONFIRM_BUTTON_ID else foundBy,
             buttonFound = true,
             clickSuccess = success,

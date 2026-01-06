@@ -33,15 +33,21 @@ class ListDetectedHandler @Inject constructor(
 
     override fun handle(node: AccessibilityNodeInfo, context: StateContext): StateResult {
         // 1. 화면 감지: "예약콜 리스트" 텍스트 확인
-        val hasListScreen = node.findAccessibilityNodeInfosByText("예약콜 리스트")
-            .isNotEmpty()
+        val listNodes = node.findAccessibilityNodeInfosByText("예약콜 리스트")
+        val hasListScreen = listNodes.isNotEmpty()
+
+        // ⭐ 디버그: 현재 패키지 및 화면 정보
+        val packageName = node.packageName?.toString() ?: "unknown"
 
         if (!hasListScreen) {
-            Log.w(TAG, "콜 리스트 화면 감지 실패 → 복구 모드")
-            return StateResult.Error(
-                CallAcceptState.TIMEOUT_RECOVERY,
-                "콜 리스트 화면 감지 실패"
-            )
+            // 다른 텍스트로도 시도 (공백 차이 등)
+            val altNodes1 = node.findAccessibilityNodeInfosByText("예약콜")
+            val altNodes2 = node.findAccessibilityNodeInfosByText("리스트")
+
+            Log.d(TAG, "화면 감지 실패 - pkg=$packageName, 예약콜=${altNodes1.size}개, 리스트=${altNodes2.size}개")
+
+            // ⭐ 리스트 화면 아니면 그냥 대기 (뒤로가기 안 함)
+            return StateResult.NoChange
         }
 
         // 2. 시간 체크: 새로고침 간격 확인 (원본 방식: 리스트 화면일 때만)

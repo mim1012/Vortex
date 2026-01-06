@@ -13,8 +13,9 @@ import com.example.twinme.domain.interfaces.ITimeSettings
 data class StateContext(
     /**
      * Application Context (Phase 1: ParsingConfig 접근용)
+     * nullable: 서비스 초기화 전에 접근 가능하도록 함
      */
-    val applicationContext: Context,
+    val applicationContext: Context?,
 
     /**
      * 접근성 노드 검색 함수 (View ID 기반)
@@ -64,6 +65,21 @@ data class StateContext(
      * @return 클릭 성공 여부
      */
     val performShellTap: (x: Float, y: Float) -> Boolean,
+
+    /**
+     * ⭐ Shizuku input tap 함수 (봇 탐지 우회)
+     * btn_call_accept 버튼 클릭 시 사용 (OnTouchListener 우회)
+     * @param x 클릭할 X 좌표
+     * @param y 클릭할 Y 좌표
+     * @return 클릭 성공 여부
+     */
+    val shizukuInputTap: (x: Int, y: Int) -> Boolean,
+
+    /**
+     * ⭐ 화면 크기 정보 (좌표 보정용)
+     */
+    val screenWidth: Int = 1080,
+    val screenHeight: Int = 2340,
 
     /**
      * AnalyzingHandler → ClickingItemHandler로 전달할 콜 정보

@@ -1,11 +1,16 @@
 package com.example.twinme.domain.state.handlers
 
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.accessibility.AccessibilityNodeInfo
 import com.example.twinme.data.CallAcceptState
 import com.example.twinme.domain.state.StateContext
 import com.example.twinme.domain.state.StateHandler
 import com.example.twinme.domain.state.StateResult
+import java.util.Random
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * DETECTED_CALL 상태 핸들러
@@ -24,7 +29,7 @@ class DetectedCallHandler : StateHandler {
         private const val CONFIRM_BUTTON_ID = "com.kakao.taxi.driver:id/btn_positive"  // 확인 다이얼로그 버튼
         private const val MAP_VIEW_ID = "com.kakao.taxi.driver:id/map_view"  // 상세 화면 지도 뷰
         private const val CLOSE_BUTTON_ID = "com.kakao.taxi.driver:id/action_close"  // 상세 화면 닫기 버튼
-        private val FALLBACK_TEXTS = listOf("콜 수락")  // 무조건 "콜 수락"만 사용
+        private val FALLBACK_TEXTS = listOf("수락", "직접결제 수락", "자동결제 수락", "콜 수락")  // Media_enhanced 방식
         private val CONFIRM_TEXTS = listOf("수락하기")  // 확인 다이얼로그 텍스트
         private val DETAIL_SCREEN_TEXTS = listOf("예약콜 상세", "예약콜", "출발지", "도착지")
         private const val MAX_CLICK_RETRY = 5  // 최대 클릭 재시도 횟수
@@ -118,14 +123,7 @@ class DetectedCallHandler : StateHandler {
             )
         }
 
-        Log.d(TAG, "✅ 콜 상세 화면 검증 완료 (method: $detectionMethod) - 300ms 딜레이 후 버튼 검색")
-
-        // ⭐ 화면 전환 후 UI 로딩 대기 (300ms)
-        try {
-            Thread.sleep(300)
-        } catch (e: InterruptedException) {
-            // ignore
-        }
+        Log.d(TAG, "✅ 콜 상세 화면 검증 완료 (method: $detectionMethod) - 즉시 버튼 검색")
 
         // ⭐ Phase 4: 화면 상태 스냅샷 로그 추가
         val screenTexts = mutableListOf<String>()
@@ -148,36 +146,46 @@ class DetectedCallHandler : StateHandler {
             )
         }
 
-        // ⭐⭐ Phase 4: 버튼 탐색 시작 로그
-        Log.d(TAG, "5️⃣ 🔍 [버튼 탐색 시작] state=DETECTED_CALL, target=$ACCEPT_BUTTON_ID")
+        // ⭐⭐ MediaEnhanced 방식: findAccessibilityNodeInfosByViewId 사용!
+        Log.d(TAG, "5️⃣ 🔍 [버튼 탐색 시작] state=DETECTED_CALL, ViewID 우선 검색 (MediaEnhanced 방식)")
 
-        // 1. View ID로 버튼 검색 (우선순위 1)
-        var acceptButton = context.findNode(node, ACCEPT_BUTTON_ID)
-        var foundBy = "view_id"
-        var searchMethod = "VIEW_ID"
+        var acceptButton: AccessibilityNodeInfo? = null
+        var foundBy = ""
+        var searchMethod = ""
 
-        if (acceptButton != null) {
-            // ⭐ Phase 4: ViewID HIT 로그
-            Log.d(TAG, "5️⃣ ✅ [ViewID HIT] $ACCEPT_BUTTON_ID")
-        } else {
-            // ⭐ Phase 4: ViewID MISS 로그
-            Log.w(TAG, "5️⃣ ❌ [ViewID MISS] $ACCEPT_BUTTON_ID → fallback")
+        // 1. MediaEnhanced 방식: findAccessibilityNodeInfosByViewId 사용!
+        Log.d(TAG, "5️⃣ 🔍 [ViewID SEARCH] $ACCEPT_BUTTON_ID → searching...")
+        val viewIdNodes = node.findAccessibilityNodeInfosByViewId(ACCEPT_BUTTON_ID)
+        Log.d(TAG, "5️⃣ 📋 findAccessibilityNodeInfosByViewId 결과: ${viewIdNodes.size}개 노드")
 
-            // 2. 텍스트 기반 검색 (Fallback)
+        for (foundNode in viewIdNodes) {
+            Log.d(TAG, "  - node: clickable=${foundNode.isClickable}, enabled=${foundNode.isEnabled}, visible=${foundNode.isVisibleToUser}, class=${foundNode.className}")
+            if (foundNode.isClickable && foundNode.isEnabled) {
+                acceptButton = foundNode
+                foundBy = "view_id"
+                searchMethod = "VIEW_ID"
+                Log.i(TAG, "5️⃣ ✅ [ViewID FOUND] $ACCEPT_BUTTON_ID - clickable & enabled")
+                break
+            }
+        }
+
+        // 2. ViewID로 못 찾으면 텍스트로 시도 (Fallback)
+        if (acceptButton == null) {
+            Log.w(TAG, "5️⃣ ❌ [ViewID MISS] → TEXT fallback")
             Log.d(TAG, "5️⃣ 🔍 [TEXT SEARCH] keywords=${FALLBACK_TEXTS.joinToString(",")} → searching...")
 
             for (text in FALLBACK_TEXTS) {
-                acceptButton = context.findNodeByText(node, text)
-                if (acceptButton != null) {
-                    foundBy = "text:$text"
-                    searchMethod = "TEXT"
-                    Log.i(TAG, "5️⃣ ✅ [TEXT FOUND] $text")
-                    break
+                val nodes = node.findAccessibilityNodeInfosByText(text)
+                for (foundNode in nodes) {
+                    if (foundNode.isClickable && foundNode.isEnabled) {
+                        acceptButton = foundNode
+                        foundBy = "text:$text"
+                        searchMethod = "TEXT"
+                        Log.i(TAG, "5️⃣ ✅ [TEXT FOUND] '$text' - clickable & enabled")
+                        break
+                    }
                 }
-            }
-
-            if (acceptButton == null) {
-                Log.w(TAG, "5️⃣ ❌ [TEXT MISS] 모든 fallback 텍스트 검색 실패")
+                if (acceptButton != null) break
             }
         }
 
@@ -203,36 +211,64 @@ class DetectedCallHandler : StateHandler {
         // 3. Bounds 가져오기 및 중앙 좌표 계산
         val bounds = android.graphics.Rect()
         acceptButton.getBoundsInScreen(bounds)
-        val centerX = bounds.centerX().toFloat()
-        val centerY = bounds.centerY().toFloat()
+        val centerX = bounds.centerX()
+        val centerY = bounds.centerY()
 
-        // ⭐⭐ Phase 4: 최종 버튼 결정 로그
+        // ⭐⭐ Phase 4: 최종 버튼 결정 로그 + 상세 검증
         val nodeDesc = "Button{id=${acceptButton.viewIdResourceName}, text=${acceptButton.text}, clickable=${acceptButton.isClickable}, bounds=$bounds}"
         Log.i(TAG, "5️⃣ 🎯 [버튼 결정] method=$searchMethod, node=$nodeDesc")
 
-        // 4. 클릭 시도 - performAction만 사용! (MediaEnhanced 권장 구조)
-        Log.d(TAG, "콜 수락 버튼 클릭 시도 (검색 방법: $foundBy, 좌표: $centerX, $centerY)")
-        val clickStartTime = System.currentTimeMillis()
+        // ⭐ 버튼 상태 완전 검증
+        Log.d(TAG, "🔍 버튼 상세 정보:")
+        Log.d(TAG, "  - viewId: ${acceptButton.viewIdResourceName}")
+        Log.d(TAG, "  - text: ${acceptButton.text}")
+        Log.d(TAG, "  - className: ${acceptButton.className}")
+        Log.d(TAG, "  - isClickable: ${acceptButton.isClickable}")
+        Log.d(TAG, "  - isEnabled: ${acceptButton.isEnabled}")
+        Log.d(TAG, "  - isVisibleToUser: ${acceptButton.isVisibleToUser}")
+        Log.d(TAG, "  - isFocusable: ${acceptButton.isFocusable}")
+        Log.d(TAG, "  - bounds: $bounds")
 
-        // ⭐ 4-1. performAction 1차 시도
-        var success = acceptButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-        var clickMethod = "performAction"
-        Log.d(TAG, "✅ performAction 1차 결과: $success")
-
-        // ⭐ 4-2. 실패 시 focus 후 재시도
-        if (!success) {
-            Log.w(TAG, "performAction 1차 실패 → FOCUS 후 재시도")
-            acceptButton.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
-            Thread.sleep(50)
-            success = acceptButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            clickMethod = "performAction+focus"
-            Log.d(TAG, "✅ performAction 2차 결과 (focus 후): $success")
+        // 부모 노드도 확인
+        val parent = acceptButton.parent
+        if (parent != null) {
+            Log.d(TAG, "  - parent.className: ${parent.className}")
+            Log.d(TAG, "  - parent.isEnabled: ${parent.isEnabled}")
+            Log.d(TAG, "  - parent.isVisibleToUser: ${parent.isVisibleToUser}")
         }
 
-        val elapsedMs = System.currentTimeMillis() - clickStartTime
-        Log.d(TAG, "클릭 방법: $clickMethod, 결과: $success, elapsed=${elapsedMs}ms")
+        // ⭐⭐⭐ 4. 좌표 보정 (화면 밖 bounds 처리)
+        // bounds가 화면 밖이면 수동 테스트 좌표 (540, 2080) 사용
+        val tapX: Int
+        val tapY: Int
 
-        // 5. 클릭 결과 로깅
+        if (centerX > context.screenWidth || centerX < 0) {
+            // 화면 밖 좌표 → 수동 테스트 좌표 사용
+            tapX = 540
+            tapY = 2080
+            Log.w(TAG, "⚠️ [좌표 보정] bounds($centerX, $centerY) 화면 밖 → (540, 2080) 사용")
+        } else {
+            tapX = centerX
+            tapY = centerY
+            Log.d(TAG, "✅ [좌표] bounds 정상: ($tapX, $tapY)")
+        }
+
+        val clickStartTime = System.currentTimeMillis()
+
+        // ⭐⭐⭐ 5. Shizuku input tap으로 버튼 클릭 (봇 탐지 우회)
+        Log.i(TAG, "🚀 [Shizuku] btn_call_accept 클릭 시도: ($tapX, $tapY)")
+
+        // 인간적 랜덤 지연 (50-150ms)
+        val randomDelay = 50L + Random().nextInt(100)
+        Thread.sleep(randomDelay)
+        Log.d(TAG, "🎲 랜덤 지연: ${randomDelay}ms")
+
+        val success = context.shizukuInputTap(tapX, tapY)
+        val elapsedMs = System.currentTimeMillis() - clickStartTime
+
+        Log.d(TAG, "🚀 [Shizuku] input tap 결과: $success (${elapsedMs}ms)")
+
+        // 6. 클릭 결과 로깅
         context.logger.logAcceptStep(
             step = 2,
             stepName = "DETECTED_CALL",
@@ -243,22 +279,29 @@ class DetectedCallHandler : StateHandler {
             callKey = context.eligibleCall?.callKey ?: ""
         )
 
-        // ⭐ 4-3. 그래도 실패 시 클릭 실패 처리 (재시도 X)
+        // 7. 결과에 따른 상태 전환
         if (!success) {
-            Log.e(TAG, "❌ 콜 수락 버튼 클릭 최종 실패")
-            resetState()
-            return StateResult.Error(
-                errorState = CallAcceptState.ERROR_UNKNOWN,
-                reason = "콜 수락 버튼 클릭 실패 (performAction+focus 모두 실패)"
-            )
+            Log.e(TAG, "❌ Shizuku input tap 실패 → dispatchGesture fallback")
+            // Fallback: dispatchGesture
+            val gestureSuccess = context.performGestureClick(tapX.toFloat(), tapY.toFloat())
+            Log.d(TAG, "🖱️ dispatchGesture fallback 결과: $gestureSuccess")
+
+            if (!gestureSuccess) {
+                Log.e(TAG, "❌ 콜 수락 버튼 클릭 최종 실패")
+                resetState()
+                return StateResult.Error(
+                    errorState = CallAcceptState.ERROR_UNKNOWN,
+                    reason = "콜 수락 버튼 클릭 실패 (Shizuku + dispatchGesture 모두 실패)"
+                )
+            }
         }
 
-        // ⭐ 4-4. 성공 시 즉시 다음 상태로 전이 (WAITING_FOR_CONFIRM)
+        // ⭐ 성공 시 즉시 다음 상태로 전이 (WAITING_FOR_CONFIRM)
         Log.i(TAG, "✅ 콜 수락 버튼 클릭 성공 → WAITING_FOR_CONFIRM 전환")
         resetState()
         return StateResult.Transition(
             nextState = CallAcceptState.WAITING_FOR_CONFIRM,
-            reason = "콜 수락 버튼 클릭 성공"
+            reason = "Shizuku input tap 성공"
         )
     }
 

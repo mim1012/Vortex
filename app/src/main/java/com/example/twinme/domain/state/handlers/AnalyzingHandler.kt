@@ -12,6 +12,7 @@ import com.example.twinme.domain.parsing.HeuristicParsingStrategy
 import com.example.twinme.domain.state.StateContext
 import com.example.twinme.domain.state.StateHandler
 import com.example.twinme.domain.state.StateResult
+import com.example.twinme.util.NotificationHelper
 
 /**
  * ANALYZING 상태 핸들러 (원본 APK 방식)
@@ -123,6 +124,13 @@ class AnalyzingHandler : StateHandler {
         for (call in sortedCalls) {
             if (call.isEligible(context.filterSettings, context.timeSettings)) {
                 Log.d(TAG, "조건 충족 콜 발견: 시간=${call.reservationTime}, ${call.destination}, ${call.price}원")
+
+                // ⭐ 원본 APK 방식: 콜 발견 Toast 표시 (MacroEngine.java line 547)
+                context.applicationContext?.let { ctx ->
+                    val toastMessage = "${call.reservationTime} 요금 ${call.price}원 콜 발견"
+                    NotificationHelper.showToast(ctx, toastMessage)
+                    Log.d(TAG, "콜 발견 Toast 표시: $toastMessage")
+                }
 
                 // ⭐ 원본 APK 방식: eligibleCall에 저장하고 CLICKING_ITEM으로 전환
                 context.eligibleCall = call
@@ -310,8 +318,13 @@ class AnalyzingHandler : StateHandler {
      * - 경로 길이: >= 2자
      */
     private fun parseReservationItem(itemNode: AccessibilityNodeInfo, context: StateContext, index: Int): ReservationCall? {
-        // 1. ParsingConfig 초기화
-        val config = ParsingConfig.getInstance(context.applicationContext)
+        // 1. ParsingConfig 초기화 (applicationContext가 null이면 기본값 사용)
+        val appContext = context.applicationContext
+        if (appContext == null) {
+            Log.w(TAG, "applicationContext is null - parsing skipped")
+            return null
+        }
+        val config = ParsingConfig.getInstance(appContext)
 
         // 2. 전략 리스트 생성 및 우선순위 정렬
         val strategies = buildList {

@@ -107,10 +107,27 @@ class CallAcceptEngineImpl @Inject constructor(
      * ⭐ 필드로 유지하여 eligibleCall 값이 상태 전환 시에도 유지되도록 함
      * 원본 APK: MacroEngine 내부의 eligibleCall 필드 역할
      */
+    /**
+     * 서비스 초기화 여부 확인
+     */
+    private fun isServiceInitialized(): Boolean {
+        return com.example.twinme.service.CallAcceptAccessibilityService.instance?.applicationContext != null
+    }
+
     private val stateContext: StateContext by lazy {
+        val service = com.example.twinme.service.CallAcceptAccessibilityService.instance
+        val context = service?.applicationContext
+        if (context == null) {
+            Log.w(TAG, "AccessibilityService not initialized - using empty context")
+        }
+
+        // 화면 크기 가져오기
+        val displayMetrics = context?.resources?.displayMetrics
+        val screenWidth = displayMetrics?.widthPixels ?: 1080
+        val screenHeight = displayMetrics?.heightPixels ?: 2340
+
         StateContext(
-            applicationContext = com.example.twinme.service.CallAcceptAccessibilityService.instance?.applicationContext
-                ?: throw IllegalStateException("AccessibilityService not initialized"),
+            applicationContext = context,
             findNode = { _, viewId ->
                 cachedRootNode?.let { findNodeByViewId(it, viewId) }
             },
@@ -128,7 +145,13 @@ class CallAcceptEngineImpl @Inject constructor(
             performShellTap = { x, y ->
                 // ADB input tap과 동일한 방식: shell 명령어 실행
                 com.example.twinme.service.CallAcceptAccessibilityService.instance?.performShellTap(x, y) ?: false
-            }
+            },
+            shizukuInputTap = { x, y ->
+                // ⭐ Shizuku input tap (봇 탐지 우회)
+                com.example.twinme.service.CallAcceptAccessibilityService.instance?.shizukuInputTap(x, y) ?: false
+            },
+            screenWidth = screenWidth,
+            screenHeight = screenHeight
         )
     }
 
@@ -143,7 +166,13 @@ class CallAcceptEngineImpl @Inject constructor(
     override fun start() {
         if (_isRunning.value) return
         Log.d(TAG, "엔진 시작")
+
+        // ⭐ 상태 초기화 (중요!)
         _isRunning.value = true
+        _isPaused.value = false  // pause 상태 초기화
+        stateContext.eligibleCall = null  // 이전 콜 정보 초기화
+        cachedRootNode = null  // ⭐ rootNode 캐시 초기화 (신선한 노드 사용)
+
         changeState(CallAcceptState.WAITING_FOR_CALL, "엔진 시작됨")
 
         // ⭐ 메인 루프 시작! (원본 APK의 핵심)
@@ -193,6 +222,29 @@ class CallAcceptEngineImpl @Inject constructor(
     override fun processNode(node: AccessibilityNodeInfo) {
         // rootNode 캐시 업데이트 (메인 루프에서 사용)
         cachedRootNode = node
+    }
+
+    /**
+     * ⭐⭐⭐ 즉시 실행 모드 (테스트용)
+     * 이벤트 발생 시 딜레이 없이 상태 머신 바로 실행
+     * 루프 대기 없이 즉각 처리
+     */
+    override fun executeImmediate(node: AccessibilityNodeInfo) {
+        // 실행 중이 아니면 무시
+        if (!_isRunning.value) return
+
+        // 일시정지 중이면 무시
+        if (_isPaused.value) return
+
+        // 패키지 확인
+        val currentPackage = node.packageName?.toString()
+        if (currentPackage != "com.kakao.taxi.driver") return
+
+        // 캐시 업데이트
+        cachedRootNode = node
+
+        // ⭐ 상태 머신 즉시 실행 (딜레이 없음)
+        executeStateMachineOnce(node)
     }
 
     // ============================================
@@ -345,6 +397,14 @@ class CallAcceptEngineImpl @Inject constructor(
             return 50L
         }
 
+        // ⭐ ERROR_ASSIGNED → TIMEOUT_RECOVERY 자동 전환 (원본 APK 방식)
+        // 원본: MacroEngine.java FAILED_ASSIGNED → TIMEOUT_RECOVERY → 백 버튼 → 리스트 복귀
+        if (_currentState.value == CallAcceptState.ERROR_ASSIGNED) {
+            Log.d(TAG, "ERROR_ASSIGNED → TIMEOUT_RECOVERY 자동 전환 (이미 배차됨)")
+            changeState(CallAcceptState.TIMEOUT_RECOVERY, "이미 배차됨 - 복구 시작")
+            return 100L
+        }
+
         val currentHandler = handlerMap[_currentState.value]
         if (currentHandler == null) {
             Log.w(TAG, "핸들러 없음: ${_currentState.value}")
@@ -462,32 +522,33 @@ class CallAcceptEngineImpl @Inject constructor(
 
     /**
      * 상태별 지연 시간 반환
-     * 원본: MacroEngine.smali 라인 1313-1780의 packed-switch 반환값
+     * ⭐ 즉시 처리 모드: 모든 딜레이 최소화 (1ms)
      *
-     * | 상태 | 지연 시간 | 16진수 |
-     * |------|----------|--------|
-     * | IDLE | - | - |
-     * | WAITING_FOR_CALL | 동적 계산 | - |
-     * | DETECTED_CALL | 50ms | 0x32 |
-     * | WAITING_FOR_CONFIRM | 10ms | 0xa |
-     * | CALL_ACCEPTED | 500ms | 0x1f4 |
-     * | ERROR_* | 500ms | 0x1f4 |
+     * 원본 APK 값 (참고용):
+     * | 상태 | 원본 | 즉시모드 |
+     * |------|------|---------|
+     * | WAITING_FOR_CALL | 10ms | 1ms |
+     * | LIST_DETECTED | 10ms | 1ms |
+     * | ANALYZING | 50ms | 1ms |
+     * | DETECTED_CALL | 50ms | 1ms |
+     * | CLICKING_ITEM | 10ms | 1ms |
+     * | WAITING_FOR_CONFIRM | 10ms | 1ms |
      */
     private fun getDelayForState(state: CallAcceptState): Long {
         return when (state) {
             CallAcceptState.IDLE -> Long.MAX_VALUE
-            CallAcceptState.WAITING_FOR_CALL -> 10L          // 즉시 전환
-            CallAcceptState.LIST_DETECTED -> 10L             // 빠른 체크
-            CallAcceptState.REFRESHING -> 30L                // 원본 APK 타이밍
-            CallAcceptState.ANALYZING -> 50L                 // 원본 APK 타이밍
-            CallAcceptState.CLICKING_ITEM -> 10L             // 원본 APK 타이밍
-            CallAcceptState.DETECTED_CALL -> 50L
-            CallAcceptState.WAITING_FOR_CONFIRM -> 10L
-            CallAcceptState.CALL_ACCEPTED -> 500L
-            CallAcceptState.TIMEOUT_RECOVERY -> 100L         // 복구 체크
+            CallAcceptState.WAITING_FOR_CALL -> 1L           // ⭐ 즉시
+            CallAcceptState.LIST_DETECTED -> 1L              // ⭐ 즉시
+            CallAcceptState.REFRESHING -> 1L                 // ⭐ 즉시
+            CallAcceptState.ANALYZING -> 1L                  // ⭐ 즉시
+            CallAcceptState.CLICKING_ITEM -> 1L              // ⭐ 즉시
+            CallAcceptState.DETECTED_CALL -> 1L              // ⭐ 즉시
+            CallAcceptState.WAITING_FOR_CONFIRM -> 1L        // ⭐ 즉시
+            CallAcceptState.CALL_ACCEPTED -> 100L            // 완료 후 짧은 대기
+            CallAcceptState.TIMEOUT_RECOVERY -> 50L          // 복구
             CallAcceptState.ERROR_ASSIGNED,
             CallAcceptState.ERROR_TIMEOUT,
-            CallAcceptState.ERROR_UNKNOWN -> 500L
+            CallAcceptState.ERROR_UNKNOWN -> 100L
         }
     }
 

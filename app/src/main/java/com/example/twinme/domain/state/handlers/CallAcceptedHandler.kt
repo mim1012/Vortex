@@ -6,6 +6,7 @@ import com.example.twinme.data.CallAcceptState
 import com.example.twinme.domain.state.StateContext
 import com.example.twinme.domain.state.StateHandler
 import com.example.twinme.domain.state.StateResult
+import com.example.twinme.util.NotificationHelper
 
 /**
  * CALL_ACCEPTED 상태 핸들러 (원본 APK 방식)
@@ -31,6 +32,14 @@ class CallAcceptedHandler : StateHandler {
 
     override fun handle(node: AccessibilityNodeInfo, context: StateContext): StateResult {
         Log.d(TAG, "✅ 콜 수락 완료! → 엔진 일시정지 (pause) + IDLE 전환")
+
+        // ⭐ 원본 APK 방식: 알림음 + Toast (MacroEngine.java line 434-440)
+        // playSuccessSound() + Toast.makeText(context, "예약 완료", 0).show()
+        context.applicationContext?.let { ctx ->
+            NotificationHelper.playSuccessSound(ctx)
+            NotificationHelper.showToast(ctx, "예약 완료")
+            Log.d(TAG, "성공 알림음 및 Toast 표시 완료")
+        }
 
         // ⭐ 원본 APK 방식: MacroEngine.smali 라인 1347-1378
         // .line 288: invoke-virtual {v0}, Lorg/twinlife/device/android/twinme/MacroEngine;->pause()V

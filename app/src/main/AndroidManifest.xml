@@ -50,6 +50,15 @@
                 android:value="UI overlay for accessibility service control" />
         </service>
 
+        <!-- Shizuku Provider (시스템 레벨 input tap) -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:enabled="true"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
     </application>
 
 </manifest>
