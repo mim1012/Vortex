@@ -120,8 +120,25 @@ class WaitingForConfirmHandler : StateHandler {
             val centerX = bounds.centerX().toFloat()
             val centerY = bounds.centerY().toFloat()
 
-            val reClickSuccess = context.performGestureClick(centerX, centerY)
-            Log.d(TAG, "btn_call_accept 재클릭 결과: $reClickSuccess (좌표: $centerX, $centerY)")
+            // 1차: performAction 시도 (더 신뢰성 높음)
+            var reClickSuccess = false
+            if (confirmButton.isClickable) {
+                reClickSuccess = confirmButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                Log.d(TAG, "btn_call_accept performAction 결과: $reClickSuccess")
+            }
+
+            // 2차: performAction 실패 시 제스처 클릭
+            if (!reClickSuccess) {
+                reClickSuccess = context.performGestureClick(centerX, centerY)
+                Log.d(TAG, "btn_call_accept 제스처 재클릭 결과: $reClickSuccess (좌표: $centerX, $centerY)")
+            }
+
+            // 다이얼로그 로딩 대기 (500ms)
+            try {
+                Thread.sleep(500)
+            } catch (e: InterruptedException) {
+                // ignore
+            }
 
             return StateResult.NoChange  // 다음 사이클에서 다이얼로그 확인
         }

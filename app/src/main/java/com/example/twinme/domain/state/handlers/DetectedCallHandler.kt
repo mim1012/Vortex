@@ -21,21 +21,55 @@ class DetectedCallHandler : StateHandler {
     companion object {
         private const val TAG = "DetectedCallHandler"
         private const val ACCEPT_BUTTON_ID = "com.kakao.taxi.driver:id/btn_call_accept"
+        private const val CONFIRM_BUTTON_ID = "com.kakao.taxi.driver:id/btn_positive"  // 확인 다이얼로그 버튼
         private const val MAP_VIEW_ID = "com.kakao.taxi.driver:id/map_view"  // 상세 화면 지도 뷰
         private const val CLOSE_BUTTON_ID = "com.kakao.taxi.driver:id/action_close"  // 상세 화면 닫기 버튼
         private val FALLBACK_TEXTS = listOf("콜 수락")  // 무조건 "콜 수락"만 사용
+        private val CONFIRM_TEXTS = listOf("수락하기")  // 확인 다이얼로그 텍스트
         private val DETAIL_SCREEN_TEXTS = listOf("예약콜 상세", "예약콜", "출발지", "도착지")
+        private const val MAX_CLICK_RETRY = 5  // 최대 클릭 재시도 횟수
     }
+
+    // 클릭 후 다이얼로그 대기 상태 추적
+    private var clickedAndWaiting = false
+    private var waitRetryCount = 0
 
     override val targetState: CallAcceptState = CallAcceptState.DETECTED_CALL
 
     override fun handle(node: AccessibilityNodeInfo, context: StateContext): StateResult {
-        Log.d(TAG, "DETECTED_CALL 진입 - 화면 검증 시작")
+        Log.d(TAG, "DETECTED_CALL 진입 - 화면 검증 시작 (clickedAndWaiting=$clickedAndWaiting, waitRetry=$waitRetryCount)")
 
-        // ⭐ 0. "예약콜 리스트" 텍스트가 있으면 아직 리스트 화면 (화면 전환 안 됨)
+        // ⭐ 0. 확인 다이얼로그가 이미 떠 있는지 먼저 확인
+        val hasConfirmDialog = checkConfirmDialogVisible(node)
+        if (hasConfirmDialog) {
+            Log.i(TAG, "✅ 확인 다이얼로그 감지됨 (수락하기 버튼) → WAITING_FOR_CONFIRM 전환")
+            resetState()
+            return StateResult.Transition(
+                nextState = CallAcceptState.WAITING_FOR_CONFIRM,
+                reason = "확인 다이얼로그 감지됨"
+            )
+        }
+
+        // ⭐ 0-1. 클릭 후 대기 중인데 다이얼로그가 안 나타난 경우
+        if (clickedAndWaiting) {
+            waitRetryCount++
+            Log.d(TAG, "🔄 다이얼로그 대기 중... ($waitRetryCount/$MAX_CLICK_RETRY)")
+
+            if (waitRetryCount >= MAX_CLICK_RETRY) {
+                Log.w(TAG, "⚠️ 다이얼로그 대기 시간 초과 - 재클릭 시도")
+                resetState()
+                // 다시 클릭 시도하도록 아래로 진행
+            } else {
+                // 아직 대기 중 - 다음 루프에서 다시 확인
+                return StateResult.NoChange
+            }
+        }
+
+        // ⭐ 0-2. "예약콜 리스트" 텍스트가 있으면 아직 리스트 화면 (화면 전환 안 됨)
         val hasListScreen = node.findAccessibilityNodeInfosByText("예약콜 리스트").isNotEmpty()
         if (hasListScreen) {
             Log.w(TAG, "⚠️ 아직 '예약콜 리스트' 화면 - 화면 전환 안 됨 → CLICKING_ITEM 복귀")
+            resetState()
             return StateResult.Error(
                 CallAcceptState.CLICKING_ITEM,
                 "화면 전환 안 됨 - 재클릭 필요 (still on list screen)"
@@ -211,13 +245,29 @@ class DetectedCallHandler : StateHandler {
             callKey = context.eligibleCall?.callKey ?: ""
         )
 
-        // 4. 결과 반환
+        // 4. 결과 반환 - 클릭 후 다이얼로그 대기
         return if (success) {
-            Log.d(TAG, "콜 수락 버튼 클릭 성공")
-            StateResult.Transition(
-                nextState = CallAcceptState.WAITING_FOR_CONFIRM,
-                reason = "콜 수락 버튼 클릭 성공"
-            )
+            Log.d(TAG, "콜 수락 버튼 클릭 성공 - 다이얼로그 대기 시작")
+
+            // 클릭 후 즉시 다이얼로그 확인
+            Thread.sleep(300)  // 다이얼로그 출현 대기
+
+            // 다이얼로그가 바로 나타났는지 확인
+            val dialogAppeared = checkConfirmDialogVisible(node)
+            if (dialogAppeared) {
+                Log.i(TAG, "✅ 다이얼로그 즉시 감지 → WAITING_FOR_CONFIRM 전환")
+                resetState()
+                StateResult.Transition(
+                    nextState = CallAcceptState.WAITING_FOR_CONFIRM,
+                    reason = "콜 수락 버튼 클릭 후 다이얼로그 감지"
+                )
+            } else {
+                // 다이얼로그 아직 안 나타남 - 대기 상태로 전환
+                Log.d(TAG, "⏳ 다이얼로그 미출현 - 대기 상태로 전환")
+                clickedAndWaiting = true
+                waitRetryCount = 0
+                StateResult.NoChange
+            }
         } else {
             Log.e(TAG, "콜 수락 버튼 클릭 실패")
             StateResult.Error(
@@ -225,6 +275,42 @@ class DetectedCallHandler : StateHandler {
                 reason = "콜 수락 버튼 클릭 실패"
             )
         }
+    }
+
+    /**
+     * 확인 다이얼로그(수락하기 버튼)가 보이는지 확인
+     */
+    private fun checkConfirmDialogVisible(node: AccessibilityNodeInfo): Boolean {
+        // 1. View ID로 확인
+        if (findNodeByViewId(node, CONFIRM_BUTTON_ID) != null) {
+            Log.d(TAG, "✅ btn_positive View ID로 다이얼로그 감지")
+            return true
+        }
+
+        // 2. "수락하기" 텍스트로 확인
+        for (text in CONFIRM_TEXTS) {
+            val nodes = node.findAccessibilityNodeInfosByText(text)
+            if (nodes.isNotEmpty()) {
+                // btn_call_accept이 아닌지 확인
+                for (foundNode in nodes) {
+                    val viewId = foundNode.viewIdResourceName ?: ""
+                    if (!viewId.contains("btn_call_accept")) {
+                        Log.d(TAG, "✅ '$text' 텍스트로 다이얼로그 감지 (viewId=$viewId)")
+                        return true
+                    }
+                }
+            }
+        }
+
+        return false
+    }
+
+    /**
+     * 상태 초기화
+     */
+    private fun resetState() {
+        clickedAndWaiting = false
+        waitRetryCount = 0
     }
 
     /**
