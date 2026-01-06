@@ -437,17 +437,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateTimeRangesUI() {
         llTimeRangeCards.removeAllViews()
-        val timeRanges = settingsManager.timeRanges
-        tvTimeRangesCount.text = "${timeRanges.size}개"
+        val dateTimeRanges = settingsManager.dateTimeRanges
+        tvTimeRangesCount.text = "${dateTimeRanges.size}개"
 
-        for (timeRange in timeRanges) {
-            // DateTimeRange 파싱
-            val dateTimeRange = try {
-                DateTimeRange.fromStorageString(timeRange)
-            } catch (e: Exception) {
-                continue  // 파싱 실패 시 건너뛰기
-            }
-
+        for (dateTimeRange in dateTimeRanges) {
             // Chip 생성 (컴팩트 태그 형식)
             val chip = com.google.android.material.chip.Chip(this).apply {
                 // 포맷터
@@ -467,7 +460,7 @@ class MainActivity : AppCompatActivity() {
                 // X 버튼 활성화
                 isCloseIconVisible = true
                 setOnCloseIconClickListener {
-                    settingsManager.removeTimeRange(timeRange)
+                    settingsManager.removeDateTimeRange(dateTimeRange)
                     updateTimeRangesUI()
                 }
 
@@ -503,10 +496,10 @@ class MainActivity : AppCompatActivity() {
         val calendar = Calendar.getInstance()
         var startDate = LocalDate.now()
         var endDate = LocalDate.now()
-        var startHour = 9
-        var startMinute = 0
-        var endHour = 18
-        var endMinute = 0
+        var startHour = 0
+        var startMinute = 1
+        var endHour = 23
+        var endMinute = 59
 
         // 1. 시작 날짜 선택
         DatePickerDialog(this, { _, year, month, dayOfMonth ->
@@ -534,8 +527,8 @@ class MainActivity : AppCompatActivity() {
                             endTime = LocalTime.of(endHour, endMinute)
                         )
 
-                        // 저장 형식으로 변환하여 저장
-                        settingsManager.addTimeRange(dateTimeRange.toStorageString())
+                        // dateTimeRanges에 저장 (시간 필터에서 사용)
+                        settingsManager.addDateTimeRange(dateTimeRange)
                         updateTimeRangesUI()
                     }
                 }, startDate.year, startDate.monthValue - 1, startDate.dayOfMonth).apply {

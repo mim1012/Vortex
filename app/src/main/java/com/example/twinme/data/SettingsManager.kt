@@ -308,10 +308,21 @@ class SettingsManager(context: Context) : IFilterSettings, ITimeSettings, IUiSet
     // ITimeSettings 구현: 예약 시간이 날짜+시간 범위 내에 있는지
     override fun isReservationInDateTimeRange(reservationTime: String): Boolean {
         val ranges = dateTimeRanges
-        if (ranges.isEmpty()) return true // 범위가 없으면 항상 허용
+        Log.d(TAG, "⏰ 시간필터 체크: reservationTime='$reservationTime', ranges=${ranges.map { it.toDisplayString() }}")
+
+        if (ranges.isEmpty()) {
+            Log.d(TAG, "⏰ 시간필터: 범위 없음 → 허용")
+            return true // 범위가 없으면 항상 허용
+        }
 
         val today = LocalDate.now()
-        return ranges.any { it.isReservationTimeInRange(reservationTime, today) }
+        val result = ranges.any { range ->
+            val inRange = range.isReservationTimeInRange(reservationTime, today)
+            Log.d(TAG, "⏰ 시간필터: ${range.toDisplayString()} → inRange=$inRange")
+            inRange
+        }
+        Log.d(TAG, "⏰ 시간필터 최종: $result")
+        return result
     }
 
     /**

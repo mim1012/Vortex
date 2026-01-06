@@ -39,7 +39,8 @@ class AnalyzingHandler : StateHandler {
 
         // 인천공항 키워드 (조건3용)
         private val INCHEON_AIRPORT_KEYWORDS = listOf(
-            "인천공항", "인천국제공항", "ICN", "인천 공항"
+            "인천공항", "인천국제공항", "ICN", "인천 공항",
+            "운서1동", "운서2동"
         )
     }
 
