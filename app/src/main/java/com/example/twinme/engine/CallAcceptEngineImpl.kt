@@ -333,6 +333,14 @@ class CallAcceptEngineImpl @Inject constructor(
         // 모든 상태를 핸들러에게 위임 (원본 APK 방식)
         // 원본: MacroEngine.smali 라인 1313-1780의 packed-switch
         // ============================================
+
+        // ⭐ ERROR_TIMEOUT → TIMEOUT_RECOVERY 자동 전환
+        if (_currentState.value == CallAcceptState.ERROR_TIMEOUT) {
+            Log.d(TAG, "ERROR_TIMEOUT → TIMEOUT_RECOVERY 자동 전환")
+            changeState(CallAcceptState.TIMEOUT_RECOVERY, "타임아웃 복구 시작")
+            return 50L
+        }
+
         val currentHandler = handlerMap[_currentState.value]
         if (currentHandler == null) {
             Log.w(TAG, "핸들러 없음: ${_currentState.value}")

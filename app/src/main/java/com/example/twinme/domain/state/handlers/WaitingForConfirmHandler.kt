@@ -109,12 +109,29 @@ class WaitingForConfirmHandler : StateHandler {
             return StateResult.NoChange
         }
 
+        // ⭐ btn_call_accept 버튼이 보이면 다이얼로그가 아직 안 나타남 → 재클릭 시도
+        val buttonId = confirmButton.viewIdResourceName ?: ""
+        if (buttonId.contains("btn_call_accept")) {
+            Log.w(TAG, "⚠️ btn_call_accept 발견 - 확인 다이얼로그 미출현 → 재클릭 시도")
+
+            // btn_call_accept 다시 클릭
+            val bounds = android.graphics.Rect()
+            confirmButton.getBoundsInScreen(bounds)
+            val centerX = bounds.centerX().toFloat()
+            val centerY = bounds.centerY().toFloat()
+
+            val reClickSuccess = context.performGestureClick(centerX, centerY)
+            Log.d(TAG, "btn_call_accept 재클릭 결과: $reClickSuccess (좌표: $centerX, $centerY)")
+
+            return StateResult.NoChange  // 다음 사이클에서 다이얼로그 확인
+        }
+
         if (!confirmButton.isClickable) {
             Log.w(TAG, "수락 확인 버튼을 찾았으나 클릭 불가능 (검색 방법: $foundBy)")
             return StateResult.NoChange
         }
 
-        // 3. Bounds 가져오기 및 중앙 좌표 계산 (원본 APK 방식)
+        // 3. Bounds 가져오기 및 중앙 좌표 계산
         val bounds = android.graphics.Rect()
         confirmButton.getBoundsInScreen(bounds)
         val centerX = bounds.centerX().toFloat()
@@ -124,10 +141,27 @@ class WaitingForConfirmHandler : StateHandler {
         val nodeDesc = "Button{id=${confirmButton.viewIdResourceName}, text=${confirmButton.text}, clickable=${confirmButton.isClickable}, bounds=$bounds}"
         Log.i(TAG, "6️⃣ 🎯 [버튼 결정] method=$searchMethod, node=$nodeDesc")
 
-        // 4. 제스처 클릭 시도 (원본 APK 방식: dispatchGesture)
+        // 4. 클릭 시도 - 제스처 클릭 우선 (performAction이 작동 안 하는 경우 대비)
         Log.d(TAG, "수락 확인 버튼 클릭 시도 (검색 방법: $foundBy, 좌표: $centerX, $centerY)")
         val clickStartTime = System.currentTimeMillis()
-        val success = context.performGestureClick(centerX, centerY)
+
+        // 4-1. 제스처 클릭 먼저 시도 (좌표 기반, 더 확실함)
+        var success = context.performGestureClick(centerX, centerY)
+        var clickMethod = "dispatchGesture"
+
+        if (success) {
+            Log.d(TAG, "✅ 제스처 클릭 전송됨")
+        } else {
+            // 4-2. 실패 시 performAction 시도
+            Log.w(TAG, "제스처 클릭 실패 → performAction 시도")
+            success = confirmButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            clickMethod = "performAction"
+            if (success) {
+                Log.d(TAG, "✅ performAction 클릭 성공")
+            }
+        }
+
+        Log.d(TAG, "클릭 방법: $clickMethod, 결과: $success")
         val elapsedMs = System.currentTimeMillis() - clickStartTime
 
         // 5. 클릭 결과 로깅 (검색 방법 포함)

@@ -23,7 +23,7 @@ class DetectedCallHandler : StateHandler {
         private const val ACCEPT_BUTTON_ID = "com.kakao.taxi.driver:id/btn_call_accept"
         private const val MAP_VIEW_ID = "com.kakao.taxi.driver:id/map_view"  // 상세 화면 지도 뷰
         private const val CLOSE_BUTTON_ID = "com.kakao.taxi.driver:id/action_close"  // 상세 화면 닫기 버튼
-        private val FALLBACK_TEXTS = listOf("콜 수락", "수락", "승낙", "accept")
+        private val FALLBACK_TEXTS = listOf("콜 수락")  // 무조건 "콜 수락"만 사용
         private val DETAIL_SCREEN_TEXTS = listOf("예약콜 상세", "예약콜", "출발지", "도착지")
     }
 
@@ -31,6 +31,16 @@ class DetectedCallHandler : StateHandler {
 
     override fun handle(node: AccessibilityNodeInfo, context: StateContext): StateResult {
         Log.d(TAG, "DETECTED_CALL 진입 - 화면 검증 시작")
+
+        // ⭐ 0. "예약콜 리스트" 텍스트가 있으면 아직 리스트 화면 (화면 전환 안 됨)
+        val hasListScreen = node.findAccessibilityNodeInfosByText("예약콜 리스트").isNotEmpty()
+        if (hasListScreen) {
+            Log.w(TAG, "⚠️ 아직 '예약콜 리스트' 화면 - 화면 전환 안 됨 → CLICKING_ITEM 복귀")
+            return StateResult.Error(
+                CallAcceptState.CLICKING_ITEM,
+                "화면 전환 안 됨 - 재클릭 필요 (still on list screen)"
+            )
+        }
 
         // ⭐ 1. 화면 전환 검증 (2단계 Fallback: View ID → 텍스트)
         var hasDetailScreen = false
@@ -51,17 +61,15 @@ class DetectedCallHandler : StateHandler {
             Log.d(TAG, "✅ View ID로 상세 화면 감지 성공 ($detectionMethod)")
         }
 
-        // 1-2. 텍스트 기반 검증 (Fallback, 우선순위 2)
+        // 1-2. 텍스트 기반 검증 (Fallback, 우선순위 2) - "예약콜 상세" 텍스트만 허용
         if (!hasDetailScreen) {
             Log.d(TAG, "View ID 검증 실패 - 텍스트 기반 검증 시도")
 
-            for (text in DETAIL_SCREEN_TEXTS) {
-                if (node.findAccessibilityNodeInfosByText(text).isNotEmpty()) {
-                    hasDetailScreen = true
-                    detectionMethod = "text:$text"
-                    Log.d(TAG, "✅ 텍스트로 상세 화면 감지 성공 ($detectionMethod)")
-                    break
-                }
+            // "예약콜 상세" 텍스트가 있어야 상세 화면
+            if (node.findAccessibilityNodeInfosByText("예약콜 상세").isNotEmpty()) {
+                hasDetailScreen = true
+                detectionMethod = "text:예약콜 상세"
+                Log.d(TAG, "✅ 텍스트로 상세 화면 감지 성공 ($detectionMethod)")
             }
         }
 
@@ -76,7 +84,14 @@ class DetectedCallHandler : StateHandler {
             )
         }
 
-        Log.d(TAG, "✅ 콜 상세 화면 검증 완료 (method: $detectionMethod) - 버튼 검색 시작")
+        Log.d(TAG, "✅ 콜 상세 화면 검증 완료 (method: $detectionMethod) - 300ms 딜레이 후 버튼 검색")
+
+        // ⭐ 화면 전환 후 UI 로딩 대기 (300ms)
+        try {
+            Thread.sleep(300)
+        } catch (e: InterruptedException) {
+            // ignore
+        }
 
         // ⭐ Phase 4: 화면 상태 스냅샷 로그 추가
         val screenTexts = mutableListOf<String>()
@@ -151,7 +166,7 @@ class DetectedCallHandler : StateHandler {
             return StateResult.NoChange
         }
 
-        // 3. Bounds 가져오기 및 중앙 좌표 계산 (원본 APK 방식)
+        // 3. Bounds 가져오기 및 중앙 좌표 계산
         val bounds = android.graphics.Rect()
         acceptButton.getBoundsInScreen(bounds)
         val centerX = bounds.centerX().toFloat()
@@ -161,10 +176,27 @@ class DetectedCallHandler : StateHandler {
         val nodeDesc = "Button{id=${acceptButton.viewIdResourceName}, text=${acceptButton.text}, clickable=${acceptButton.isClickable}, bounds=$bounds}"
         Log.i(TAG, "5️⃣ 🎯 [버튼 결정] method=$searchMethod, node=$nodeDesc")
 
-        // 4. 제스처 클릭 시도 (원본 APK 방식: dispatchGesture)
+        // 4. 클릭 시도 - 제스처 클릭 우선 (performAction이 작동 안 하는 경우 대비)
         Log.d(TAG, "콜 수락 버튼 클릭 시도 (검색 방법: $foundBy, 좌표: $centerX, $centerY)")
         val clickStartTime = System.currentTimeMillis()
-        val success = context.performGestureClick(centerX, centerY)
+
+        // 4-1. 제스처 클릭 먼저 시도 (좌표 기반, 더 확실함)
+        var success = context.performGestureClick(centerX, centerY)
+        var clickMethod = "dispatchGesture"
+
+        if (success) {
+            Log.d(TAG, "✅ 제스처 클릭 전송됨")
+        } else {
+            // 4-2. 실패 시 performAction 시도
+            Log.w(TAG, "제스처 클릭 실패 → performAction 시도")
+            success = acceptButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            clickMethod = "performAction"
+            if (success) {
+                Log.d(TAG, "✅ performAction 클릭 성공")
+            }
+        }
+
+        Log.d(TAG, "클릭 방법: $clickMethod, 결과: $success")
         val elapsedMs = System.currentTimeMillis() - clickStartTime
 
         // 5. 클릭 결과 로깅 (검색 방법 포함)

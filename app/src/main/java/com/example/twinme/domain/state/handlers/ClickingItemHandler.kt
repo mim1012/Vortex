@@ -23,6 +23,35 @@ class ClickingItemHandler : StateHandler {
         private const val MAX_RETRY = 3  // 최대 3회 재시도
     }
 
+    /**
+     * 주어진 좌표에서 클릭 가능한 노드 찾기
+     */
+    private fun findClickableNodeAtPoint(node: AccessibilityNodeInfo, x: Int, y: Int): AccessibilityNodeInfo? {
+        val bounds = android.graphics.Rect()
+        node.getBoundsInScreen(bounds)
+
+        // 좌표가 이 노드 범위 안에 있는지 확인
+        if (!bounds.contains(x, y)) {
+            return null
+        }
+
+        // 자식 노드 중에서 찾기 (더 구체적인 노드 우선)
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val result = findClickableNodeAtPoint(child, x, y)
+            if (result != null) {
+                return result
+            }
+        }
+
+        // 자신이 클릭 가능하면 반환
+        if (node.isClickable) {
+            return node
+        }
+
+        return null
+    }
+
     // ⭐ 재시도 카운터 (Singleton으로 등록되어야 상태 유지됨)
     private var retryCount = 0
 
@@ -55,27 +84,52 @@ class ClickingItemHandler : StateHandler {
 
         Log.d(TAG, "클릭 대상: ${eligibleCall.destination}, ${eligibleCall.price}원")
 
-        // 2. 클릭 실행 - performAction 우선 사용 (원본 APK 방식)
+        // 2. 클릭 실행 - 3단계 시도
         val startTime = System.currentTimeMillis()
         var clickSuccess = false
+        var clickMethod = "none"
 
-        // 2-1. clickableNode가 있으면 performAction 사용 (가장 안정적)
+        val bounds = eligibleCall.bounds
+        val centerX = bounds.centerX().toFloat()
+        val centerY = bounds.centerY().toFloat()
+        Log.d(TAG, "클릭 좌표: ($centerX, $centerY), bounds=$bounds")
+
+        // 2-1. clickableNode performAction 시도
         if (eligibleCall.clickableNode != null) {
-            Log.d(TAG, "performAction으로 클릭 시도 (clickableNode 있음)")
+            Log.d(TAG, "1차 시도: clickableNode.performAction()")
             clickSuccess = eligibleCall.clickableNode.performAction(
                 AccessibilityNodeInfo.ACTION_CLICK
             )
+            if (clickSuccess) {
+                clickMethod = "performAction_clickableNode"
+                Log.d(TAG, "✅ clickableNode performAction 성공")
+            }
         }
 
-        // 2-2. performAction 실패 시 좌표 클릭으로 폴백
+        // 2-2. 실패 시 rootNode에서 해당 좌표에 있는 노드 찾아서 클릭
         if (!clickSuccess) {
-            Log.w(TAG, "performAction 실패 또는 clickableNode 없음 - 좌표 클릭 시도")
-            val bounds = eligibleCall.bounds
-            val centerX = bounds.centerX().toFloat()
-            val centerY = bounds.centerY().toFloat()
-            Log.d(TAG, "클릭 좌표: ($centerX, $centerY), bounds=$bounds")
-            clickSuccess = context.performGestureClick(centerX, centerY)
+            Log.w(TAG, "2차 시도: 좌표로 노드 찾아서 performAction()")
+            val nodeAtPoint = findClickableNodeAtPoint(node, centerX.toInt(), centerY.toInt())
+            if (nodeAtPoint != null) {
+                clickSuccess = nodeAtPoint.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                if (clickSuccess) {
+                    clickMethod = "performAction_nodeAtPoint"
+                    Log.d(TAG, "✅ 좌표 기반 노드 performAction 성공")
+                }
+            }
         }
+
+        // 2-3. 마지막으로 제스처 클릭 시도
+        if (!clickSuccess) {
+            Log.w(TAG, "3차 시도: dispatchGesture 좌표 클릭")
+            clickSuccess = context.performGestureClick(centerX, centerY)
+            if (clickSuccess) {
+                clickMethod = "dispatchGesture"
+                Log.d(TAG, "✅ 제스처 클릭 전송됨 (실제 클릭 여부는 화면 전환으로 확인)")
+            }
+        }
+
+        Log.d(TAG, "클릭 방법: $clickMethod, 결과: $clickSuccess")
 
         val elapsedMs = System.currentTimeMillis() - startTime
 

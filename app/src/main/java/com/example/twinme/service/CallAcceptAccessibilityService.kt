@@ -112,28 +112,44 @@ class CallAcceptAccessibilityService : AccessibilityService() {
      */
     fun performGestureClick(x: Float, y: Float): Boolean {
         return try {
-            // 1. Path 생성 및 터치 포인트 설정 (원본 라인 1865-1874)
+            // 1. Path 생성 및 터치 포인트 설정
             val path = Path().apply {
                 moveTo(x, y)
             }
 
-            // 2. StrokeDescription 생성 (원본 라인 1882-1888)
-            // startTime = 0ms, duration = 100ms (0x64)
+            // 2. StrokeDescription 생성 - duration 150ms로 증가 (더 확실한 터치)
             val stroke = GestureDescription.StrokeDescription(
                 path,
                 0L,    // startTime
-                100L   // duration (원본: const-wide/16 v8, 0x64)
+                150L   // duration: 100ms → 150ms로 증가
             )
 
-            // 3. GestureDescription 빌드 (원본 라인 1877-1893)
+            // 3. GestureDescription 빌드
             val gesture = GestureDescription.Builder()
                 .addStroke(stroke)
                 .build()
 
-            // 4. dispatchGesture() 호출 (원본 라인 1897)
-            val success = dispatchGesture(gesture, null, null)
+            // 4. dispatchGesture() 호출 with 콜백
+            var gestureCompleted = false
+            val callback = object : GestureResultCallback() {
+                override fun onCompleted(gestureDescription: GestureDescription?) {
+                    Log.d(TAG, "✅ 제스처 완료 콜백: ($x, $y)")
+                    gestureCompleted = true
+                }
+                override fun onCancelled(gestureDescription: GestureDescription?) {
+                    Log.w(TAG, "⚠️ 제스처 취소됨: ($x, $y)")
+                    gestureCompleted = false
+                }
+            }
 
-            Log.d(TAG, "제스처 클릭: ($x, $y) - ${if (success) "성공" else "실패"}")
+            val success = dispatchGesture(gesture, callback, null)
+
+            // 제스처 완료 대기 (최대 200ms)
+            if (success) {
+                Thread.sleep(200)
+            }
+
+            Log.d(TAG, "제스처 클릭: ($x, $y) - dispatch=${success}, completed=$gestureCompleted")
             success
 
         } catch (e: Exception) {
