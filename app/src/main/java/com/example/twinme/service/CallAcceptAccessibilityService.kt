@@ -1,0 +1,144 @@
+package com.example.twinme.service
+
+import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.GestureDescription
+import android.graphics.Path
+import android.util.Log
+import android.view.accessibility.AccessibilityEvent
+import android.widget.Toast
+import com.example.twinme.auth.AuthManager
+import com.example.twinme.domain.interfaces.ICallEngine
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
+
+/**
+ * CallAcceptAccessibilityService - 단순화됨
+ *
+ * 역할:
+ * 1. 인증 확인
+ * 2. rootNode를 엔진에 전달 (엔진이 메인 루프에서 사용)
+ *
+ * 제거됨:
+ * - 자동 새로고침 타이머 (엔진의 메인 루프가 처리)
+ * - observeEngineState() (불필요)
+ * - startAutoRefresh() (불필요)
+ * - stopAutoRefresh() (불필요)
+ * - performRefresh() (엔진이 처리)
+ */
+@AndroidEntryPoint
+class CallAcceptAccessibilityService : AccessibilityService() {
+
+    companion object {
+        private const val TAG = "CallAcceptService"
+
+        /**
+         * Singleton instance for TimeoutRecoveryHandler to access performGlobalAction
+         */
+        var instance: CallAcceptAccessibilityService? = null
+            private set
+    }
+
+    @Inject
+    lateinit var engine: ICallEngine
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        instance = this  // Singleton instance 설정
+        Log.d(TAG, "서비스 연결됨")
+
+        // 인증 상태 확인
+        val authManager = AuthManager.getInstance(applicationContext)
+        if (!authManager.isAuthorized || !authManager.isCacheValid()) {
+            Log.w(TAG, "인증되지 않은 접근 - 서비스 비활성화")
+            Toast.makeText(applicationContext, "인증되지 않은 접근입니다.", Toast.LENGTH_SHORT).show()
+            disableSelf()
+            return
+        }
+
+        Log.d(TAG, "서비스 초기화 완료 - 엔진이 메인 루프 제어")
+    }
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        // 인증 상태 재확인 (캐시 만료 대비)
+        val authManager = AuthManager.getInstance(applicationContext)
+        if (!authManager.isAuthorized || !authManager.isCacheValid()) {
+            Log.w(TAG, "인증 캐시 만료 - 서비스 비활성화")
+            disableSelf()
+            return
+        }
+
+        // 포그라운드 앱 패키지 체크
+        val packageName = event?.packageName?.toString()
+        if (packageName != "com.kakao.taxi.driver") {
+            Log.v(TAG, "다른 앱 이벤트 무시: $packageName")
+            return
+        }
+
+        // 화면 변경 시 rootNode를 엔진에 전달
+        // 엔진의 메인 루프에서 이 rootNode를 사용하여 새로고침 및 상태 처리
+        if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
+            event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+
+            rootInActiveWindow?.let { rootNode ->
+                // 엔진에 rootNode 전달 (캐시에 저장됨)
+                engine.processNode(rootNode)
+            }
+        }
+    }
+
+    override fun onInterrupt() {
+        Log.d(TAG, "서비스 중단")
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        instance = null  // Singleton instance 해제
+        Log.d(TAG, "서비스 종료")
+    }
+
+    /**
+     * 제스처 기반 클릭 실행 (원본 APK 방식)
+     * AccessibilityNodeInfo.performAction() 대신 dispatchGesture() 사용
+     *
+     * 원본 APK: MacroAccessibilityService.smali 라인 1865-1897
+     * - Path 생성 및 moveTo(x, y)
+     * - StrokeDescription(path, startTime=0, duration=100ms)
+     * - GestureDescription 빌드
+     * - dispatchGesture() 호출
+     *
+     * @param x 클릭할 X 좌표
+     * @param y 클릭할 Y 좌표
+     * @return 제스처 전송 성공 여부
+     */
+    fun performGestureClick(x: Float, y: Float): Boolean {
+        return try {
+            // 1. Path 생성 및 터치 포인트 설정 (원본 라인 1865-1874)
+            val path = Path().apply {
+                moveTo(x, y)
+            }
+
+            // 2. StrokeDescription 생성 (원본 라인 1882-1888)
+            // startTime = 0ms, duration = 100ms (0x64)
+            val stroke = GestureDescription.StrokeDescription(
+                path,
+                0L,    // startTime
+                100L   // duration (원본: const-wide/16 v8, 0x64)
+            )
+
+            // 3. GestureDescription 빌드 (원본 라인 1877-1893)
+            val gesture = GestureDescription.Builder()
+                .addStroke(stroke)
+                .build()
+
+            // 4. dispatchGesture() 호출 (원본 라인 1897)
+            val success = dispatchGesture(gesture, null, null)
+
+            Log.d(TAG, "제스처 클릭: ($x, $y) - ${if (success) "성공" else "실패"}")
+            success
+
+        } catch (e: Exception) {
+            Log.e(TAG, "제스처 클릭 실패: ${e.message}", e)
+            false
+        }
+    }
+}

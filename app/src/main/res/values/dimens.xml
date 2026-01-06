@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Chip UI -->
+    <dimen name="chip_stroke_width">1dp</dimen>
+    <dimen name="chip_min_height">32dp</dimen>
+    <dimen name="chip_corner_radius">8dp</dimen>
+    <dimen name="chip_icon_size">16dp</dimen>
+</resources>

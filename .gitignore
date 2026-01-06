@@ -1,0 +1,48 @@
+# Gradle
+.gradle/
+build/
+local.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.claude/
+
+# Android
+*.apk
+*.ap_
+*.dex
+*.class
+bin/
+gen/
+out/
+
+# Build outputs
+app/build/
+app/release/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+
+# Images (optional - keep only essential ones)
+*.png
+*.jpg
+*.jpeg
+
+# Backend (if not needed)
+backend/
+
+# Personal files
+_bmad/
+scripts/

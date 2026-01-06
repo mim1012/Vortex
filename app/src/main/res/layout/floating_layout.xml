@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="horizontal"
+    android:background="@android:color/transparent"
+    android:padding="4dp"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content">
+
+    <ImageButton
+        android:id="@+id/btn_drag_handle"
+        android:background="@drawable/floating_button_background"
+        android:padding="8dp"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:src="@drawable/ic_move"
+        android:scaleType="centerInside"
+        android:layout_marginEnd="4dp"
+        android:contentDescription="@string/drag_handle" />
+
+    <ImageButton
+        android:id="@+id/btn_stop"
+        android:background="@drawable/floating_button_background"
+        android:padding="8dp"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:src="@drawable/ic_close"
+        android:scaleType="centerInside"
+        android:layout_marginEnd="4dp"
+        android:contentDescription="@string/stop_service" />
+
+    <ImageButton
+        android:id="@+id/btn_play_pause"
+        android:background="@drawable/floating_button_background"
+        android:padding="8dp"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:src="@drawable/ic_play"
+        android:scaleType="centerInside"
+        android:contentDescription="@string/play_pause" />
+
+</LinearLayout>

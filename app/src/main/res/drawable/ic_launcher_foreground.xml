@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 람보르기니 스타일 스포츠카 -->
+    <group
+        android:translateX="14"
+        android:translateY="36"
+        android:scaleX="2.0"
+        android:scaleY="2.0">
+
+        <!-- 차체 하부 (메인 바디) -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M4,16 L8,14 L32,14 L36,16 L38,18 L38,22 L36,23 L4,23 L2,22 L2,18 Z" />
+
+        <!-- 보닛 & 앞범퍼 (샤프한 각도) -->
+        <path
+            android:fillColor="#E8E8E8"
+            android:pathData="M8,14 L12,11 L20,11 L24,12 L32,14 Z" />
+
+        <!-- 윈드실드 (경사진 앞유리) -->
+        <path
+            android:fillColor="#333333"
+            android:pathData="M14,9 L18,7 L22,7 L26,9 L26,13 L14,13 Z" />
+
+        <!-- 사이드 윈도우 -->
+        <path
+            android:fillColor="#444444"
+            android:pathData="M10,12 L14,10 L14,14 L10,15 Z" />
+        <path
+            android:fillColor="#444444"
+            android:pathData="M26,10 L30,12 L30,15 L26,14 Z" />
+
+        <!-- Y자 헤드라이트 (람보르기니 특징) -->
+        <path
+            android:fillColor="#FFD700"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="0.3"
+            android:pathData="M9,13 L10,12.5 L9.5,14 Z" />
+        <path
+            android:fillColor="#FFD700"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="0.3"
+            android:pathData="M31,13 L30,12.5 L30.5,14 Z" />
+
+        <!-- 공기 흡입구 (프론트 인테이크) -->
+        <path
+            android:fillColor="#222222"
+            android:pathData="M15,13 L17,13 L17,14 L15,14 Z" />
+        <path
+            android:fillColor="#222222"
+            android:pathData="M23,13 L25,13 L25,14 L23,14 Z" />
+
+        <!-- 앞 바퀴 (크고 넓은 휠) -->
+        <path
+            android:fillColor="#1A1A1A"
+            android:pathData="M7,17 m-2.5,0 a2.5,2.5 0,1,1 5,0 a2.5,2.5 0,1,1 -5,0" />
+        <path
+            android:fillColor="#444444"
+            android:pathData="M7,17 m-1.2,0 a1.2,1.2 0,1,1 2.4,0 a1.2,1.2 0,1,1 -2.4,0" />
+
+        <!-- 뒷 바퀴 (크고 넓은 휠) -->
+        <path
+            android:fillColor="#1A1A1A"
+            android:pathData="M33,17 m-2.5,0 a2.5,2.5 0,1,1 5,0 a2.5,2.5 0,1,1 -5,0" />
+        <path
+            android:fillColor="#444444"
+            android:pathData="M33,17 m-1.2,0 a1.2,1.2 0,1,1 2.4,0 a1.2,1.2 0,1,1 -2.4,0" />
+
+        <!-- 사이드 에어 인테이크 (측면 공기 흡입구) -->
+        <path
+            android:fillColor="#222222"
+            android:pathData="M27,15 L29,15 L29,17 L27,17 Z" />
+
+        <!-- 리어 스포일러 (뒷날개 - 심플하게) -->
+        <path
+            android:fillColor="#E0E0E0"
+            android:pathData="M34,11 L37,11 L37,12 L34,12 Z" />
+
+        <!-- 테일라이트 -->
+        <path
+            android:fillColor="#FF3333"
+            android:pathData="M35,14 L36,14 L36,15 L35,15 Z" />
+
+        <!-- 로고 영역 (선택적) -->
+        <path
+            android:fillColor="#FFD700"
+            android:pathData="M19,10 L21,10 L21,11 L19,11 Z" />
+
+    </group>
+</vector>
