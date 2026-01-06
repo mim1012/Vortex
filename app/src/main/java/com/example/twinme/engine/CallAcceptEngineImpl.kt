@@ -106,6 +106,8 @@ class CallAcceptEngineImpl @Inject constructor(
      */
     private val stateContext: StateContext by lazy {
         StateContext(
+            applicationContext = com.example.twinme.service.CallAcceptAccessibilityService.instance?.applicationContext
+                ?: throw IllegalStateException("AccessibilityService not initialized"),
             findNode = { _, viewId ->
                 cachedRootNode?.let { findNodeByViewId(it, viewId) }
             },
@@ -524,6 +526,15 @@ class CallAcceptEngineImpl @Inject constructor(
         }
 
         timeoutRunnable = Runnable {
+            // ⭐ Phase 5: 타임아웃 컨텍스트 로그 추가
+            logger.logTimeoutContext(
+                state = _currentState.value,
+                lastAction = getLastActionDescription(_currentState.value),
+                retryCount = getRetryCountForState(_currentState.value),
+                elapsedMs = timeout,
+                callKey = stateContext.eligibleCall?.callKey ?: ""
+            )
+
             changeState(CallAcceptState.ERROR_TIMEOUT, "상태 변경 타임아웃 (${timeout}ms)")
         }
         handler.postDelayed(timeoutRunnable!!, timeout)
@@ -572,5 +583,34 @@ class CallAcceptEngineImpl @Inject constructor(
     override fun setAutoRefreshEnabled(enabled: Boolean) {
         _isAutoRefreshEnabled.value = enabled
         Log.d(TAG, "자동 새로고침 ${if (enabled) "활성화" else "비활성화"}")
+    }
+
+    // ============================================
+    // Phase 5: 타임아웃 컨텍스트 유틸리티
+    // ============================================
+
+    /**
+     * 상태별 마지막 액션 설명
+     */
+    private fun getLastActionDescription(state: CallAcceptState): String {
+        return when (state) {
+            CallAcceptState.CLICKING_ITEM -> "콜 아이템 클릭 시도"
+            CallAcceptState.DETECTED_CALL -> "search btn_call_accept"
+            CallAcceptState.WAITING_FOR_CONFIRM -> "search btn_positive"
+            CallAcceptState.ANALYZING -> "콜 리스트 파싱"
+            CallAcceptState.LIST_DETECTED -> "콜 리스트 화면 감지"
+            CallAcceptState.REFRESHING -> "새로고침 버튼 클릭"
+            CallAcceptState.WAITING_FOR_CALL -> "콜 대기"
+            else -> "unknown"
+        }
+    }
+
+    /**
+     * 상태별 재시도 횟수
+     * TODO: 추후 Handler에서 retryCount 노출 시 실제 값 반환
+     */
+    private fun getRetryCountForState(state: CallAcceptState): Int {
+        // 임시: 0 반환 (추후 Handler에서 retryCount 노출)
+        return 0
     }
 }

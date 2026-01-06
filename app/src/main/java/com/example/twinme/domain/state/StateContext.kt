@@ -1,5 +1,6 @@
 package com.example.twinme.domain.state
 
+import android.content.Context
 import android.view.accessibility.AccessibilityNodeInfo
 import com.example.twinme.domain.interfaces.IFilterSettings
 import com.example.twinme.domain.interfaces.ILogger
@@ -10,6 +11,11 @@ import com.example.twinme.domain.interfaces.ITimeSettings
  * 핸들러가 노드 검색, 로깅, 필터링을 수행하는 데 필요한 의존성을 제공
  */
 data class StateContext(
+    /**
+     * Application Context (Phase 1: ParsingConfig 접근용)
+     */
+    val applicationContext: Context,
+
     /**
      * 접근성 노드 검색 함수 (View ID 기반)
      * @param rootNode 루트 접근성 노드

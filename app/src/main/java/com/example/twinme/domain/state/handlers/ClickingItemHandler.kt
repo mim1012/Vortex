@@ -82,11 +82,12 @@ class ClickingItemHandler : StateHandler {
         // 4. 로깅 (ACCEPT_STEP step=1)
         context.logger.logAcceptStep(
             step = 1,
-            stepName = "콜 아이템 클릭",
+            stepName = "CLICKING_ITEM",  // ⭐ Phase 4: LocalLogger가 인식할 수 있는 이름
             targetId = "call_item_${eligibleCall.destination}",
             buttonFound = true,  // bounds가 있으면 항상 true
             clickSuccess = clickSuccess,
-            elapsedMs = elapsedMs
+            elapsedMs = elapsedMs,
+            callKey = eligibleCall.callKey  // ⭐ Phase 4: 콜 식별자 추가
         )
 
         // 5. 결과 처리 (재시도 로직 포함)

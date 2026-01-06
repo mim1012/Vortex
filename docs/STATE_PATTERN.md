@@ -12,16 +12,23 @@ Vortex는 **State Pattern**을 사용하여 상태별 처리 로직을 분리합
 ```
 domain/
 ├── model/
-│   └── ReservationCall.kt        # 콜 정보 데이터 클래스
+│   ├── ReservationCall.kt        # 콜 정보 데이터 클래스
+│   └── DateTimeRange.kt          # 시간대 범위 데이터 클래스
 └── state/
     ├── StateHandler.kt           # 핸들러 인터페이스
     ├── StateContext.kt           # 컨텍스트 (의존성 전달)
     ├── StateResult.kt            # 처리 결과 (Sealed Class)
     └── handlers/
-        ├── IdleHandler.kt            # IDLE 상태 처리
-        ├── CallListHandler.kt        # WAITING_FOR_CALL 상태 (콜 리스트 파싱)
-        ├── DetectedCallHandler.kt    # DETECTED_CALL 상태 (콜 수락 버튼)
-        └── WaitingForConfirmHandler.kt # WAITING_FOR_CONFIRM 상태 (확인 버튼)
+        ├── IdleHandler.kt                 # IDLE 상태 처리
+        ├── WaitingForCallHandler.kt       # WAITING_FOR_CALL 상태 (새로고침 간격 체크)
+        ├── ListDetectedHandler.kt         # LIST_DETECTED 상태 (콜 리스트 화면 감지)
+        ├── RefreshingHandler.kt           # REFRESHING 상태 (새로고침 버튼 클릭)
+        ├── AnalyzingHandler.kt            # ANALYZING 상태 (콜 파싱 및 필터링)
+        ├── ClickingItemHandler.kt         # CLICKING_ITEM 상태 (좌표 기반 콜 클릭)
+        ├── DetectedCallHandler.kt         # DETECTED_CALL 상태 (콜 수락 버튼)
+        ├── WaitingForConfirmHandler.kt    # WAITING_FOR_CONFIRM 상태 (확인 버튼)
+        ├── CallAcceptedHandler.kt         # CALL_ACCEPTED 상태 (최종 성공 처리)
+        └── TimeoutRecoveryHandler.kt      # TIMEOUT_RECOVERY 상태 (타임아웃 복구)
 ```
 
 ---
@@ -52,9 +59,24 @@ interface StateHandler {
 ```kotlin
 data class StateContext(
     /**
-     * 접근성 노드 검색 함수
+     * Application Context (Phase 1: ParsingConfig 접근용)
+     */
+    val applicationContext: Context,
+
+    /**
+     * 접근성 노드 검색 함수 (View ID 기반)
      */
     val findNode: (rootNode: AccessibilityNodeInfo, viewId: String) -> AccessibilityNodeInfo?,
+
+    /**
+     * 접근성 노드 검색 함수 (텍스트 기반)
+     */
+    val findNodeByText: (rootNode: AccessibilityNodeInfo, text: String) -> AccessibilityNodeInfo?,
+
+    /**
+     * 제스처 클릭 실행 함수 (좌표 기반)
+     */
+    val performGestureClick: (x: Float, y: Float) -> Boolean,
 
     /**
      * 로거 인스턴스
@@ -69,7 +91,17 @@ data class StateContext(
     /**
      * 시간 설정 (시간대 기반 필터링)
      */
-    val timeSettings: ITimeSettings
+    val timeSettings: ITimeSettings,
+
+    /**
+     * 마지막 새로고침 시각 (밀리초)
+     */
+    var lastRefreshTime: Long = 0L,
+
+    /**
+     * 분석된 조건 충족 콜 정보 (AnalyzingHandler → ClickingItemHandler 전달)
+     */
+    var eligibleCall: ReservationCall? = null
 )
 ```
 
@@ -276,50 +308,106 @@ object StateModule {
 
 ---
 
-## 7. 상태 흐름도 (3단계 플로우)
+## 7. 상태 흐름도 (전체 플로우)
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                  State Flow (3-Step Process)                  │
-└──────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│                    Complete State Flow (7+ States)                      │
+└────────────────────────────────────────────────────────────────────────┘
 
   IDLE
     │ [IdleHandler: NoChange]
     │
     │ Engine.start()
     ▼
-  WAITING_FOR_CALL ◄─────────────────────────────────────────────┐
-    │ [CallListHandler]                                          │
-    │   ├─ 시간대 확인 (timeSettings.isWithinTimeRange())        │
-    │   │     └─ 시간대 외 → NoChange                            │
-    │   ├─ RecyclerView 콜 리스트 파싱                           │
-    │   │     └─ 콜 없음 → NoChange                              │
-    │   ├─ 필터 조건 확인 (filterSettings)                       │
-    │   │     ├─ shouldAcceptByAmount(price)                    │
-    │   │     └─ shouldAcceptByKeyword(destination, price)      │
-    │   │     └─ 조건 충족 콜 없음 → NoChange                    │
-    │   └─ 조건 충족 콜 클릭 (가격 높은 순)                       │
-    │         ├─ 성공 → Transition(DETECTED_CALL)               │
-    │         └─ 실패 → NoChange                                 │
-    ▼                                                            │
-  DETECTED_CALL                                                  │
-    │ [DetectedCallHandler]                                      │
-    │   └─ btn_call_accept 검색 및 클릭                          │
-    │         ├─ 없음 → NoChange (대기)                          │
-    │         ├─ 성공 → Transition(WAITING_FOR_CONFIRM)         │
-    │         └─ 실패 → Error(ERROR_UNKNOWN)                    │
-    ▼                                                            │
-  WAITING_FOR_CONFIRM                                            │
-    │ [WaitingForConfirmHandler]                                 │
-    │   └─ btn_positive 검색 및 클릭                             │
-    │         ├─ 없음 → NoChange (대기)                          │
-    │         ├─ 성공 → Transition(CALL_ACCEPTED)               │
-    │         └─ 실패 → Error(ERROR_UNKNOWN)                    │
-    ▼                                                            │
-  CALL_ACCEPTED                                                  │
-    │                                                            │
-    │ 자동 리셋                                                   │
-    └────────────────────────────────────────────────────────────┘
+  WAITING_FOR_CALL ◄──────────────────────────────────────────────────────┐
+    │ [WaitingForCallHandler]                                              │
+    │   ├─ 새로고침 간격 체크 (lastRefreshTime 기준)                       │
+    │   │     └─ 간격 미달 → NoChange                                      │
+    │   └─ 간격 충족 → Transition(LIST_DETECTED)                           │
+    ▼                                                                      │
+  LIST_DETECTED                                                            │
+    │ [ListDetectedHandler]                                                │
+    │   ├─ "예약콜" 텍스트 감지                                             │
+    │   │     └─ 없음 → NoChange (화면 대기)                                │
+    │   └─ 감지됨 → Transition(REFRESHING)                                 │
+    ▼                                                                      │
+  REFRESHING                                                               │
+    │ [RefreshingHandler]                                                  │
+    │   ├─ 새로고침 버튼 검색 (텍스트: "새로고침")                           │
+    │   ├─ 버튼 클릭 (performGestureClick)                                 │
+    │   │     └─ lastRefreshTime 업데이트                                  │
+    │   └─ Transition(ANALYZING)                                           │
+    ▼                                                                      │
+  ANALYZING                                                                │
+    │ [AnalyzingHandler]                                                   │
+    │   ├─ RecyclerView 콜 리스트 파싱 (Phase 1: Strategy Pattern)         │
+    │   │     ├─ 1️⃣ RegexParsingStrategy 시도 (HIGH 신뢰도)                 │
+    │   │     │     └─ 실패 시 2️⃣ HeuristicParsingStrategy (LOW 신뢰도)      │
+    │   │     ├─ 교차 검증 (가격 범위, 경로 길이)                            │
+    │   │     └─ 콜 없음 → Transition(WAITING_FOR_CALL)                    │
+    │   ├─ 필터 조건 확인 (filterSettings, timeSettings)                   │
+    │   │     ├─ shouldAcceptByAmount(price)                              │
+    │   │     ├─ shouldAcceptByKeyword(destination, price)                │
+    │   │     └─ isWithinTimeRange()                                      │
+    │   ├─ 조건 충족 콜 선택 (가격 높은 순)                                  │
+    │   │     ├─ eligibleCall에 저장 (context.eligibleCall)                │
+    │   │     ├─ confidence, debugInfo 포함                                │
+    │   │     └─ Transition(CLICKING_ITEM)                                │
+    │   └─ 조건 미충족 → Transition(WAITING_FOR_CALL)                      │
+    ▼                                                                      │
+  CLICKING_ITEM                                                            │
+    │ [ClickingItemHandler]                                                │
+    │   ├─ eligibleCall.bounds 가져오기                                    │
+    │   ├─ 좌표 계산 (centerX, centerY)                                    │
+    │   ├─ 제스처 클릭 (performGestureClick)                               │
+    │   │     ├─ 성공 → Transition(DETECTED_CALL)                         │
+    │   │     └─ 실패 → NoChange (재시도, 최대 3회)                         │
+    │   └─ "이미 배차" 감지 → Error(ERROR_ASSIGNED)                        │
+    ▼                                                                      │
+  DETECTED_CALL                                                            │
+    │ [DetectedCallHandler]                                                │
+    │   ├─ 화면 검증 ("예약콜 상세" 텍스트 확인)                             │
+    │   │     └─ 실패 → Error(CLICKING_ITEM) - 재클릭 필요                 │
+    │   ├─ btn_call_accept 버튼 검색 (View ID + 텍스트 fallback)           │
+    │   │     └─ 없음 → NoChange (50ms 후 재시도)                          │
+    │   ├─ 버튼 클릭 (performGestureClick)                                 │
+    │   │     ├─ 성공 → Transition(WAITING_FOR_CONFIRM)                   │
+    │   │     └─ 실패 → Error(ERROR_UNKNOWN)                              │
+    │   └─ "이미 배차" 감지 → Error(ERROR_ASSIGNED)                        │
+    ▼                                                                      │
+  WAITING_FOR_CONFIRM                                                      │
+    │ [WaitingForConfirmHandler]                                           │
+    │   ├─ btn_positive 버튼 검색 (View ID + 텍스트 fallback)              │
+    │   │     └─ 없음 → NoChange (10ms 후 재시도)                          │
+    │   ├─ 버튼 클릭 (performGestureClick)                                 │
+    │   │     ├─ 성공 → Transition(CALL_ACCEPTED)                         │
+    │   │     └─ 실패 → Error(ERROR_UNKNOWN)                              │
+    │   └─ 타임아웃 (7초) → Error(ERROR_TIMEOUT)                           │
+    ▼                                                                      │
+  CALL_ACCEPTED                                                            │
+    │ [CallAcceptedHandler]                                                │
+    │   ├─ 최종 성공 로그 기록 (RemoteLogger.flushLogs)                    │
+    │   ├─ eligibleCall 초기화                                             │
+    │   └─ Transition(WAITING_FOR_CALL) - 다음 콜 대기                     │
+    │                                                                      │
+    └──────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────┐
+│                           Error Flow                                    │
+└────────────────────────────────────────────────────────────────────────┘
+
+  ERROR_TIMEOUT (타임아웃 발생)
+    │ [TimeoutRecoveryHandler]
+    │   ├─ BACK 제스처 실행 (performGlobalAction)
+    │   │     └─ 화면 복귀 시도
+    │   └─ Transition(WAITING_FOR_CALL) - 재시작
+    │
+  ERROR_ASSIGNED (이미 배차됨)
+    │   └─ Transition(WAITING_FOR_CALL) - 다음 콜 탐색
+    │
+  ERROR_UNKNOWN (알 수 없는 오류)
+    │   └─ Transition(ERROR_TIMEOUT) - 타임아웃 복구 프로세스 시작
 ```
 
 ### 필터링 조건 요약
@@ -353,9 +441,15 @@ State Pattern:
 
 각 Handler는 하나의 상태만 담당:
 - `IdleHandler` → IDLE 상태 처리
-- `CallListHandler` → WAITING_FOR_CALL 상태 처리 (콜 리스트 파싱 & 필터링)
+- `WaitingForCallHandler` → WAITING_FOR_CALL 상태 처리 (새로고침 간격 체크)
+- `ListDetectedHandler` → LIST_DETECTED 상태 처리 (콜 리스트 화면 감지)
+- `RefreshingHandler` → REFRESHING 상태 처리 (새로고침 버튼 클릭)
+- `AnalyzingHandler` → ANALYZING 상태 처리 (콜 리스트 파싱 & 필터링)
+- `ClickingItemHandler` → CLICKING_ITEM 상태 처리 (좌표 기반 콜 클릭)
 - `DetectedCallHandler` → DETECTED_CALL 상태 처리 (콜 수락 버튼 클릭)
 - `WaitingForConfirmHandler` → WAITING_FOR_CONFIRM 상태 처리 (확인 버튼 클릭)
+- `CallAcceptedHandler` → CALL_ACCEPTED 상태 처리 (최종 성공 로깅)
+- `TimeoutRecoveryHandler` → TIMEOUT_RECOVERY 상태 처리 (타임아웃 복구)
 
 ### 8.3 테스트 용이성
 

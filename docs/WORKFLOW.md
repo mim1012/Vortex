@@ -1,5 +1,114 @@
 # Vortex 워크플로우 가이드
 
+## 0. Mermaid 상태 다이어그램
+
+### 0.1 전체 State Flow (13개 상태)
+
+```mermaid
+stateDiagram-v2
+    [*] --> IDLE
+
+    IDLE --> WAITING_FOR_CALL: Engine.start()
+
+    WAITING_FOR_CALL --> LIST_DETECTED: 새로고침 간격 충족
+    WAITING_FOR_CALL --> WAITING_FOR_CALL: 간격 미달
+
+    LIST_DETECTED --> REFRESHING: "예약콜" 텍스트 감지
+    LIST_DETECTED --> LIST_DETECTED: 화면 대기
+
+    REFRESHING --> ANALYZING: 새로고침 버튼 클릭
+
+    ANALYZING --> CLICKING_ITEM: 조건 충족 콜 발견<br/>(Phase 1: Regex/Heuristic)
+    ANALYZING --> WAITING_FOR_CALL: 조건 충족 콜 없음
+
+    CLICKING_ITEM --> DETECTED_CALL: 좌표 기반 클릭 성공
+    CLICKING_ITEM --> CLICKING_ITEM: 클릭 실패 (재시도 3회)
+    CLICKING_ITEM --> ERROR_ASSIGNED: "이미 배차" 감지
+
+    DETECTED_CALL --> WAITING_FOR_CONFIRM: btn_call_accept 클릭 성공
+    DETECTED_CALL --> CLICKING_ITEM: 화면 검증 실패
+    DETECTED_CALL --> ERROR_ASSIGNED: "이미 배차" 감지
+    DETECTED_CALL --> ERROR_UNKNOWN: 버튼 클릭 실패
+
+    WAITING_FOR_CONFIRM --> CALL_ACCEPTED: btn_positive 클릭 성공
+    WAITING_FOR_CONFIRM --> ERROR_UNKNOWN: 버튼 클릭 실패
+    WAITING_FOR_CONFIRM --> ERROR_TIMEOUT: 7초 타임아웃
+
+    CALL_ACCEPTED --> WAITING_FOR_CALL: 다음 콜 대기
+
+    ERROR_ASSIGNED --> WAITING_FOR_CALL: 다음 콜 탐색
+    ERROR_UNKNOWN --> ERROR_TIMEOUT: 타임아웃 복구
+    ERROR_TIMEOUT --> TIMEOUT_RECOVERY: BACK 제스처 실행
+    TIMEOUT_RECOVERY --> WAITING_FOR_CALL: 재시작
+
+    note right of ANALYZING
+        Phase 1: Strategy Pattern
+        1️⃣ RegexParsingStrategy (HIGH)
+        2️⃣ HeuristicParsingStrategy (LOW)
+        + Cross-Validation
+    end note
+
+    note right of CLICKING_ITEM
+        좌표 기반 제스처 클릭
+        eligibleCall.bounds.centerX/Y
+        dispatchGesture() 사용
+    end note
+```
+
+### 0.2 Parsing Strategy Flow (Phase 1)
+
+```mermaid
+flowchart TD
+    Start([AnalyzingHandler<br/>parseReservationItem])
+    --> LoadConfig[ParsingConfig 로드<br/>assets/parsing_config.json]
+
+    LoadConfig --> BuildStrategies[전략 리스트 생성<br/>우선순위 정렬]
+
+    BuildStrategies --> CheckEnabled{활성화된<br/>전략 있음?}
+    CheckEnabled -->|없음| ErrorConfig[["❌ 파싱 실패<br/>(설정 확인 필요)"]]
+
+    CheckEnabled -->|있음| TryRegex[["1️⃣ RegexParsingStrategy<br/>Priority: 1, HIGH confidence"]]
+
+    TryRegex --> RegexParse[config 정규식으로<br/>필드 추출]
+    RegexParse --> RegexSuccess{파싱<br/>성공?}
+
+    RegexSuccess -->|실패| TryHeuristic[["2️⃣ HeuristicParsingStrategy<br/>Priority: 2, LOW confidence"]]
+
+    RegexSuccess -->|성공| ValidateRegex{교차 검증<br/>가격 범위<br/>경로 길이}
+    ValidateRegex -->|실패| TryHeuristic
+    ValidateRegex -->|통과| ReturnRegex[["✅ ReservationCall<br/>confidence=HIGH<br/>debugInfo 포함"]]
+
+    TryHeuristic --> HeuristicParse[순서 기반<br/>텍스트 할당]
+    HeuristicParse --> HeuristicSuccess{파싱<br/>성공?}
+
+    HeuristicSuccess -->|실패| AllFailed[["❌ 모든 전략 실패<br/>logParsingFailed()"]]
+
+    HeuristicSuccess -->|성공| ValidateHeuristic{교차 검증<br/>가격 범위<br/>경로 길이}
+    ValidateHeuristic -->|실패| AllFailed
+    ValidateHeuristic -->|통과| ReturnHeuristic[["✅ ReservationCall<br/>confidence=LOW<br/>debugInfo 포함"]]
+
+    ReturnRegex --> Filter[필터링<br/>금액/키워드/시간]
+    ReturnHeuristic --> Filter
+
+    Filter --> Eligible{조건<br/>충족?}
+    Eligible -->|Yes| SaveEligible["eligibleCall 저장<br/>CLICKING_ITEM 전환"]
+    Eligible -->|No| NextCall["다음 콜 확인"]
+
+    AllFailed --> NextCall
+    ErrorConfig --> End([null 반환])
+    NextCall --> End
+    SaveEligible --> End
+
+    style TryRegex fill:#e1f5e1
+    style TryHeuristic fill:#fff4e1
+    style ReturnRegex fill:#c8e6c9
+    style ReturnHeuristic fill:#ffe0b2
+    style AllFailed fill:#ffcdd2
+    style ErrorConfig fill:#ffcdd2
+```
+
+---
+
 ## 1. 전체 동작 흐름 개요
 
 ```

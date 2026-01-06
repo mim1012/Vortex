@@ -1,8 +1,10 @@
 package com.example.twinme.di
 
 import android.content.Context
+import com.example.twinme.BuildConfig
 import com.example.twinme.data.CallAcceptState
 import com.example.twinme.domain.interfaces.ILogger
+import com.example.twinme.logging.LocalLogger
 import com.example.twinme.logging.RemoteLogger
 import dagger.Module
 import dagger.Provides
@@ -13,7 +15,8 @@ import javax.inject.Singleton
 
 /**
  * Logger 의존성 제공 모듈
- * RemoteLogger를 ILogger 인터페이스로 래핑하여 제공
+ * - 개발 모드 (BuildConfig.DEBUG): LocalLogger (adb logcat 전용)
+ * - 프로덕션 모드: RemoteLogger (Railway 전송)
  */
 @Module
 @InstallIn(SingletonComponent::class)
@@ -24,9 +27,17 @@ object LoggerModule {
     fun provideLogger(
         @ApplicationContext context: Context
     ): ILogger {
-        // RemoteLogger 초기화
         RemoteLogger.init(context)
-        return RemoteLoggerAdapter
+
+        // ⭐ 개발 모드: LocalLogger (adb logcat 전용)
+        return if (BuildConfig.DEBUG) {
+            android.util.Log.i("LoggerModule", "🔧 개발 모드: LocalLogger 활성화")
+            LocalLogger()
+        } else {
+            // 프로덕션: RemoteLogger (Railway 전송)
+            android.util.Log.i("LoggerModule", "🚀 프로덕션 모드: RemoteLogger 활성화")
+            RemoteLoggerAdapter
+        }
     }
 }
 
@@ -57,9 +68,11 @@ object RemoteLoggerAdapter : ILogger {
         success: Boolean,
         finalState: CallAcceptState,
         totalMs: Long,
-        error: String?
+        error: String?,
+        callKey: String
     ) {
         RemoteLogger.logCallResult(success, finalState, totalMs, error)
+        // TODO Phase 8: callKey 파라미터를 RemoteLogger에 전달
     }
 
     override fun logConfigChange(
@@ -110,9 +123,14 @@ object RemoteLoggerAdapter : ILogger {
         callType: String,
         reservationTime: String,
         eligible: Boolean,
-        rejectReason: String?
+        rejectReason: String?,
+        confidence: String,
+        debugInfo: Map<String, Any>,
+        callKey: String,
+        collectedText: String
     ) {
-        RemoteLogger.logCallParsed(index, source, destination, price, callType, reservationTime, eligible, rejectReason)
+        RemoteLogger.logCallParsed(index, source, destination, price, callType, reservationTime, eligible, rejectReason, confidence, debugInfo)
+        // TODO Phase 8: callKey, collectedText 파라미터를 RemoteLogger에 전달
     }
 
     override fun logAcceptStep(
@@ -121,9 +139,11 @@ object RemoteLoggerAdapter : ILogger {
         targetId: String,
         buttonFound: Boolean,
         clickSuccess: Boolean,
-        elapsedMs: Long
+        elapsedMs: Long,
+        callKey: String
     ) {
         RemoteLogger.logAcceptStep(step, stepName, targetId, buttonFound, clickSuccess, elapsedMs)
+        // TODO Phase 8: callKey 파라미터를 RemoteLogger에 전달
     }
 
     override fun logParsingFailed(
@@ -142,6 +162,31 @@ object RemoteLoggerAdapter : ILogger {
         nodeDescription: String
     ) {
         RemoteLogger.logButtonSearchFailed(currentState, targetViewId, searchDepth, nodeDescription)
+    }
+
+    // ============ Phase 2: 화면 전환 검증 로그 ============
+
+    override fun logScreenCheck(
+        state: CallAcceptState,
+        targetButtonVisible: Boolean,
+        screenTextSummary: String,
+        callKey: String
+    ) {
+        // TODO Phase 8: RemoteLogger에 logScreenCheck 구현 후 연결
+        // 현재는 no-op (LocalLogger에서만 작동)
+    }
+
+    // ============ Phase 2: 타임아웃 컨텍스트 로그 ============
+
+    override fun logTimeoutContext(
+        state: CallAcceptState,
+        lastAction: String,
+        retryCount: Int,
+        elapsedMs: Long,
+        callKey: String
+    ) {
+        // TODO Phase 8: RemoteLogger에 logTimeoutContext 구현 후 연결
+        // 현재는 no-op (LocalLogger에서만 작동)
     }
 
     override fun flush() {

@@ -3,6 +3,7 @@ package com.example.twinme.domain.model
 import android.graphics.Rect
 import android.view.accessibility.AccessibilityNodeInfo
 import com.example.twinme.domain.interfaces.IFilterSettings
+import com.example.twinme.domain.parsing.ParseConfidence
 
 /**
  * 예약 콜 정보 데이터 클래스
@@ -50,8 +51,33 @@ data class ReservationCall(
      * 예약 시간 ("14:30" 형식, HH:mm)
      * 시간이 없으면 빈 문자열
      */
-    val reservationTime: String = ""
+    val reservationTime: String = "",
+
+    /**
+     * 파싱 신뢰도 (Phase 1 추가)
+     * - HIGH: 정규식으로 모든 필드 추출 성공
+     * - LOW: 휴리스틱(순서 기반)으로 추출
+     * - null: 구버전 호환성 (파싱 전략 미적용)
+     */
+    val confidence: ParseConfidence? = null,
+
+    /**
+     * 파싱 디버깅 정보 (Phase 1 추가)
+     * - strategy: 사용된 파싱 전략 ("Regex", "Heuristic")
+     * - matched_fields: 매칭된 필드 목록
+     * - text_count: 수집된 텍스트 개수
+     */
+    val debugInfo: Map<String, Any> = emptyMap()
 ) {
+    /**
+     * 콜 식별자 (추적용)
+     * 형식: "출발지->도착지@금액@예약시간"
+     * 예: "서울역->인천공항@45000@14:30"
+     *
+     * 이 식별자로 파싱 → 클릭 → 결과까지 같은 콜을 추적할 수 있습니다.
+     */
+    val callKey: String
+        get() = "$source->$destination@$price@$reservationTime"
     /**
      * 필터 설정에 따라 수락 가능한 콜인지 확인
      * 조건: 콜 타입 == "일반 예약" && 금액 조건 && 시간대 조건 && (키워드 조건)

@@ -36,6 +36,17 @@ The app uses **Hilt** for dependency injection with modules in `app/src/main/jav
 
 All components are scoped as `@Singleton` and injected via constructor injection.
 
+### Parsing Strategy (Phase 1)
+
+The app uses **Strategy Pattern** for call list parsing with 2-tier fallback:
+
+- **ParsingConfig** (Singleton): Loads regex patterns and validation rules from `assets/parsing_config.json`
+- **RegexParsingStrategy** (Priority 1, HIGH confidence): Pattern-based field extraction using JSON config
+- **HeuristicParsingStrategy** (Priority 2, LOW confidence): Order-based text assignment as fallback
+- **Cross-Validation**: Validates price range (2000~300000 KRW), route length (>=2 chars)
+
+See `docs/PARSING_STRATEGY.md` for detailed documentation.
+
 ### State Pattern Architecture
 
 The app uses the **State Pattern** to handle different call acceptance states. See `docs/STATE_PATTERN.md` for detailed documentation.
@@ -47,15 +58,23 @@ The app uses the **State Pattern** to handle different call acceptance states. S
 
 **Handler Implementations** (in `domain/state/handlers/`):
 - `IdleHandler`: IDLE state (no-op)
-- `CallListHandler`: WAITING_FOR_CALL (parses call list, filters by price/keyword/time)
-- `DetectedCallHandler`: DETECTED_CALL (clicks accept button)
-- `WaitingForConfirmHandler`: WAITING_FOR_CONFIRM (clicks confirmation button)
+- `WaitingForCallHandler`: WAITING_FOR_CALL (checks refresh interval, monitors for call list)
+- `ListDetectedHandler`: LIST_DETECTED (detects call list screen presence)
+- `RefreshingHandler`: REFRESHING (performs screen refresh action)
+- `AnalyzingHandler`: ANALYZING (parses call list, filters by price/keyword/time)
+- `ClickingItemHandler`: CLICKING_ITEM (coordinate-based gesture click on eligible call item)
+- `DetectedCallHandler`: DETECTED_CALL (clicks accept button via View ID or text fallback)
+- `WaitingForConfirmHandler`: WAITING_FOR_CONFIRM (clicks confirmation dialog button)
+- `CallAcceptedHandler`: CALL_ACCEPTED (final state, logs success)
+- `TimeoutRecoveryHandler`: TIMEOUT_RECOVERY (recovers from timeout by performing BACK gesture)
 
 **State Flow:**
 ```
-IDLE → WAITING_FOR_CALL → DETECTED_CALL → WAITING_FOR_CONFIRM → CALL_ACCEPTED
-                ↓ (on error)
-         ERROR_TIMEOUT / ERROR_UNKNOWN / ERROR_ASSIGNED
+IDLE → WAITING_FOR_CALL → LIST_DETECTED → REFRESHING → ANALYZING
+→ CLICKING_ITEM → DETECTED_CALL → WAITING_FOR_CONFIRM → CALL_ACCEPTED
+                            ↓ (on error)
+                 ERROR_TIMEOUT → TIMEOUT_RECOVERY → WAITING_FOR_CALL
+                 ERROR_UNKNOWN / ERROR_ASSIGNED
 ```
 
 ### Core Components
@@ -65,13 +84,18 @@ IDLE → WAITING_FOR_CALL → DETECTED_CALL → WAITING_FOR_CONFIRM → CALL_ACC
 - Constructor-injected with `Set<StateHandler>`, `ILogger`, settings interfaces
 - Maps handlers by `targetState` for O(1) lookup
 - Processes `AccessibilityNodeInfo` by delegating to current state's handler
-- Manages state transitions and timeout handling (10-second timeout)
+- **Main Loop**: Recursive `startMacroLoop()` → `executeStateMachineOnce()` → `scheduleNext()` pattern
+- **Timeout Handling**: 3-second timeout for most states, 7-second for WAITING_FOR_CONFIRM
+- **State-Specific Delays**: 10ms (WAITING_FOR_CALL, LIST_DETECTED), 30ms (REFRESHING), 50ms (ANALYZING, DETECTED_CALL)
+- **Node Caching**: Depends on `cachedRootNode` updated by accessibility events; if null, retries every 100ms
 
 **CallAcceptAccessibilityService** (`service/CallAcceptAccessibilityService.kt`)
 - Android `AccessibilityService` implementation with `@AndroidEntryPoint`
 - Injects `ICallEngine` via Hilt
 - Monitors `com.kakao.taxi.driver` package (configured in `res/xml/accessibility_service_config.xml`)
 - Forwards accessibility events to engine via `processNode()`
+- **Event-Driven Limitation**: Only updates `cachedRootNode` on `TYPE_WINDOW_CONTENT_CHANGED` or `TYPE_WINDOW_STATE_CHANGED` events. If KakaoT Driver app is already on call list screen when automation starts (no screen change), no event fires and node won't update until next UI change.
+- Implements `performGestureClick(x, y)` for coordinate-based clicking using `dispatchGesture()` API (original APK pattern)
 
 **FloatingStateService** (`service/FloatingStateService.kt`)
 - Foreground service displaying overlay UI with `@AndroidEntryPoint`
@@ -104,11 +128,17 @@ IDLE → WAITING_FOR_CALL → DETECTED_CALL → WAITING_FOR_CONFIRM → CALL_ACC
 - **LogFragment**: Displays operation logs
 - **CallAcceptViewModel**: AndroidViewModel wrapping engine's StateFlow as LiveData
 
-### Target View IDs (KakaoT Driver)
+### Target View IDs and Click Methods (KakaoT Driver)
 
 Referenced in `docs/VIEW_ID_REFERENCE.md`:
-- `com.kakao.taxi.driver:id/btn_call_accept` - Initial accept button
-- `com.kakao.taxi.driver:id/btn_positive` - Confirmation dialog button
+
+**View ID-Based Clicking** (performAction or dispatchGesture with bounds):
+- `com.kakao.taxi.driver:id/btn_call_accept` - Accept button in call detail screen (DetectedCallHandler)
+- `com.kakao.taxi.driver:id/btn_positive` - Confirmation dialog button (WaitingForConfirmHandler)
+
+**Coordinate-Based Clicking** (dispatchGesture with bounds center):
+- Call list items - ClickingItemHandler uses `bounds.centerX/centerY()` from `eligibleCall.bounds`
+- No View ID available for individual call items, relies on text-based node search and coordinate extraction
 
 ## Tech Stack
 
@@ -174,6 +204,8 @@ RemoteLogger.flushLogs() // Send all buffered logs
 ## Documentation
 
 - `docs/STATE_PATTERN.md` - State pattern architecture details
-- `docs/WORKFLOW.md` - Complete workflow diagrams and sequence flows
-- `docs/VIEW_ID_REFERENCE.md` - KakaoT Driver view IDs
+- `docs/PARSING_STRATEGY.md` - Strategy pattern for call list parsing (Phase 1)
+- `docs/WORKFLOW.md` - Complete workflow diagrams and sequence flows (with Mermaid diagrams)
+- `docs/VIEW_ID_REFERENCE.md` - KakaoT Driver view IDs and click methods
+- `docs/ViewIdlist.md` - Complete View ID reference from decompiled APK (all UI elements)
 - `docs/TROUBLESHOOTING.md` - Common issues and solutions

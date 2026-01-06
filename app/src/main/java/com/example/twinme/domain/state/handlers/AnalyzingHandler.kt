@@ -5,6 +5,10 @@ import android.util.Log
 import android.view.accessibility.AccessibilityNodeInfo
 import com.example.twinme.data.CallAcceptState
 import com.example.twinme.domain.model.ReservationCall
+import com.example.twinme.domain.parsing.ParsingConfig
+import com.example.twinme.domain.parsing.ViewIdParsingStrategy
+import com.example.twinme.domain.parsing.RegexParsingStrategy
+import com.example.twinme.domain.parsing.HeuristicParsingStrategy
 import com.example.twinme.domain.state.StateContext
 import com.example.twinme.domain.state.StateHandler
 import com.example.twinme.domain.state.StateResult
@@ -30,11 +34,7 @@ class AnalyzingHandler : StateHandler {
         private const val LEGACY_RECYCLER_VIEW_CLASS = "android.support.v7.widget.RecyclerView"
         private const val LIST_VIEW_CLASS = "android.widget.ListView"
 
-        // 금액 패턴: "15,000원" 또는 "15000원"
-        private val PRICE_PATTERN = Regex("(\\d{1,3}(,\\d{3})*|\\d+)\\s*원")
-
-        // 시간 패턴 (원본 APK): "12.25(수) 14:30", "01.15(월) 09:00" 형식
-        private val TIME_PATTERN = Regex("\\d{2}\\.\\d{2}\\([^)]+\\)\\s+\\d{2}:\\d{2}.*")
+        // ⭐ Phase 1: 정규식은 ParsingConfig로 이관 (assets/parsing_config.json)
 
         // 인천공항 키워드 (조건3용)
         private val INCHEON_AIRPORT_KEYWORDS = listOf(
@@ -46,6 +46,17 @@ class AnalyzingHandler : StateHandler {
 
     override fun handle(node: AccessibilityNodeInfo, context: StateContext): StateResult {
         Log.d(TAG, "콜 리스트 분석 시작")
+
+        // ⭐⭐ Phase 4: 조건 로드 값 로그 (한 번만 출력)
+        val settings = context.filterSettings
+        Log.i(TAG, """
+            3️⃣ 🎛️ [조건 로드]
+            3️⃣    - 최소 금액: ${settings.minAmount}원
+            3️⃣    - 키워드: ${settings.keywords}
+            3️⃣    - 키워드 최소 금액: ${settings.keywordMinAmount}원
+            3️⃣    - 공항 최소 금액: ${settings.airportMinAmount}원
+            3️⃣    - 모드: ${settings.conditionMode}
+        """.trimIndent())
 
         // 설정 유효성 검사
         if (!context.filterSettings.validateSettings()) {
@@ -72,11 +83,18 @@ class AnalyzingHandler : StateHandler {
         Log.d(TAG, "총 ${calls.size}개의 콜 발견")
 
         // 2. 각 콜의 조건 충족 여부 로깅
-        calls.forEachIndexed { index, call ->
+        // ⭐ Phase 4: callsWithText 사용하여 원본 텍스트 포함
+        callsWithText.forEachIndexed { index, (call, collectedText) ->
             val eligible = call.isEligible(context.filterSettings, context.timeSettings)
             val rejectReason = if (!eligible) getRejectReason(call, context) else null
 
-            Log.d(TAG, "콜 #$index: 타입=${call.callType}, 시간=${call.reservationTime}, 출발=${call.source}, 도착=${call.destination}, 금액=${call.price}원, 조건충족=$eligible")
+            // ⭐ Phase 1: confidence 로깅 추가
+            val confidenceStr = call.confidence?.name ?: "UNKNOWN"
+
+            Log.d(TAG, "콜 #$index: 타입=${call.callType}, 시간=${call.reservationTime}, 출발=${call.source}, 도착=${call.destination}, 금액=${call.price}원, 조건충족=$eligible, 신뢰도=$confidenceStr")
+
+            // ⭐ Phase 4: 조건 검증 "식으로" 로그 출력
+            logConditionCheck(call, context, eligible, index)
 
             context.logger.logCallParsed(
                 index = index,
@@ -86,7 +104,11 @@ class AnalyzingHandler : StateHandler {
                 callType = call.callType,
                 reservationTime = call.reservationTime,
                 eligible = eligible,
-                rejectReason = rejectReason
+                rejectReason = rejectReason,
+                confidence = confidenceStr,  // Phase 1: 파싱 신뢰도
+                debugInfo = call.debugInfo,   // Phase 1: 디버깅 정보
+                callKey = call.callKey,       // ⭐ Phase 4: 콜 식별자
+                collectedText = collectedText // ⭐ Phase 4: 원본 텍스트
             )
         }
 
@@ -215,16 +237,24 @@ class AnalyzingHandler : StateHandler {
         Log.d(TAG, "리스트 컨테이너 발견: $containerType, 자식 수: $itemCount")
 
         // 2. 자식 노드들 순회하며 콜 정보 파싱
-        val calls = mutableListOf<ReservationCall>()
+        // ⭐ Phase 4: (itemNode, collectedText) 쌍으로 저장
+        val callsWithText = mutableListOf<Pair<ReservationCall, String>>()
 
         for (i in 0 until recyclerView.childCount) {
             val itemNode = recyclerView.getChild(i) ?: continue
 
+            // ⭐ Phase 4: 원본 텍스트 수집
+            val textList = mutableListOf<String>()
+            collectAllText(itemNode, textList)
+            val collectedText = textList.joinToString(" | ")
+
             val call = parseReservationItem(itemNode, context, i)
             if (call != null) {
-                calls.add(call)
+                callsWithText.add(call to collectedText)
             }
         }
+
+        val calls = callsWithText.map { it.first }
 
         // 화면 감지 성공 로그
         context.logger.logCallListDetected(
@@ -264,118 +294,97 @@ class AnalyzingHandler : StateHandler {
     }
 
     /**
-     * 콜 항목 노드에서 정보 추출
+     * 콜 항목 노드에서 정보 추출 (Phase 1: 2단계 Fallback)
      *
-     * 파싱 규칙:
-     * - 금액: "15,000원" 패턴 매칭
-     * - 장소: 출발지 → 도착지 순서로 텍스트 수집
-     * - 콜 타입: "일반 예약", "1시간 예약" 등
-     * - 예약 시간: "12.25(수) 14:30" 형식
+     * 파싱 전략:
+     * 1. RegexParsingStrategy (우선순위 1, HIGH 신뢰도)
+     *    - config의 정규식 패턴으로 모든 필드 추출
+     *    - 성공 시 즉시 반환
+     * 2. HeuristicParsingStrategy (우선순위 2, LOW 신뢰도)
+     *    - 순서 기반 텍스트 할당 (기존 방식)
+     *    - 정규식 실패 시 사용
+     *
+     * 교차 검증:
+     * - 가격 범위: 2000 ~ 300000원
+     * - 경로 길이: >= 2자
      */
     private fun parseReservationItem(itemNode: AccessibilityNodeInfo, context: StateContext, index: Int): ReservationCall? {
-        // 1. 모든 텍스트 수집
+        // 1. ParsingConfig 초기화
+        val config = ParsingConfig.getInstance(context.applicationContext)
+
+        // 2. 전략 리스트 생성 및 우선순위 정렬
+        val strategies = buildList {
+            if (config.isViewIdEnabled) add(ViewIdParsingStrategy())  // Phase 2: 우선순위 0
+            if (config.isRegexEnabled) add(RegexParsingStrategy())     // 우선순위 1
+            if (config.isHeuristicEnabled) add(HeuristicParsingStrategy())  // 우선순위 2
+        }.sortedBy { it.priority }
+
+        if (strategies.isEmpty()) {
+            Log.e(TAG, "활성화된 파싱 전략이 없음 (config 확인 필요)")
+            return null
+        }
+
+        // 3. 각 전략을 순차적으로 시도
+        for (strategy in strategies) {
+            Log.d(TAG, "파싱 전략 시도: ${strategy.name} (우선순위 ${strategy.priority})")
+
+            val result = strategy.parse(itemNode, config)
+
+            if (result != null) {
+                // 교차 검증
+                if (validateParsedCall(result.call, config)) {
+                    Log.d(TAG, "✅ 파싱 성공: ${strategy.name}, 신뢰도=${result.confidence.name}")
+
+                    // confidence와 debugInfo를 포함한 ReservationCall 반환
+                    return result.call.copy(
+                        confidence = result.confidence,
+                        debugInfo = result.debugInfo
+                    )
+                } else {
+                    Log.w(TAG, "❌ 교차 검증 실패: ${strategy.name}, 다음 전략 시도")
+                }
+            } else {
+                Log.d(TAG, "파싱 실패: ${strategy.name}, 다음 전략 시도")
+            }
+        }
+
+        // 4. 모든 전략 실패 - 파싱 실패 로그 전송
         val textList = mutableListOf<String>()
         collectAllText(itemNode, textList)
+        val collectedText = textList.joinToString(" | ")
 
-        // 최소 2개 이상의 텍스트가 있어야 유효한 콜
-        if (textList.size < 2) {
-            return null
-        }
+        Log.e(TAG, "모든 파싱 전략 실패: index=$index")
 
-        // 2. 텍스트에서 정보 추출
-        var source = ""
-        var destination = ""
-        var price = 0
-        var callType = ""
-        var reservationTime = ""
-
-        for (text in textList) {
-            // 금액 패턴 확인
-            if (text.contains("요금") && text.contains("원")) {
-                val priceMatch = PRICE_PATTERN.find(text)
-                if (priceMatch != null) {
-                    price = parsePrice(priceMatch.value)
-                    continue
-                }
-            }
-
-            // 시간 패턴 확인 (원본 APK 방식)
-            val trimmedText = text.trim()
-            if (TIME_PATTERN.matches(trimmedText)) {
-                val timeParts = trimmedText.split(" / ")
-                reservationTime = timeParts[0].trim()
-                // ⭐ 원본 APK: split 후 두 번째 파트가 callType ("1시간 예약", "일반 예약")
-                if (timeParts.size > 1) {
-                    callType = timeParts[1].trim()
-                }
-                continue
-            }
-
-            // ⭐ 주의: callType은 이미 시간 문자열에서 파싱됨 ("1시간 예약", "일반 예약")
-            // 원본 APK는 "경유지", "배픽크" 같은 특수 타입도 파싱하지만, 현재는 불필요함
-
-            // 경로 파싱 (화살표 확인)
-            if (text.contains("→")) {
-                val trimmedRoute = text.trim()
-                val routeParts = trimmedRoute.split("→")
-                if (routeParts.size >= 2) {
-                    source = routeParts[0].trim()
-                    destination = routeParts[1].trim()
-                }
-                continue
-            }
-
-            // 화살표가 없는 경우: 순서대로 할당
-            if (text.length >= 2 && !text.matches(Regex("^[0-9,.:\\s]+$"))) {
-                if (source.isEmpty()) {
-                    source = text
-                } else if (destination.isEmpty()) {
-                    destination = text
-                }
-            }
-        }
-
-        // 필수 필드 검증 및 파싱 실패 로깅
-        val missingFields = mutableListOf<String>()
-        if (reservationTime.isEmpty()) missingFields.add("reservationTime")
-        if (source.isEmpty() && destination.isEmpty()) missingFields.add("route")
-        if (price <= 0) missingFields.add("price")
-
-        if (missingFields.isNotEmpty()) {
-            val collectedText = textList.joinToString(" | ")
-            val reason = "필수 필드 누락: ${missingFields.joinToString(", ")}"
-
-            Log.d(TAG, reason)
-
-            // ⭐ 서버로 파싱 실패 로그 전송
-            context.logger.logParsingFailed(
-                index = index,
-                missingFields = missingFields,
-                collectedText = collectedText,
-                reason = reason
-            )
-
-            return null
-        }
-
-        // 3. 화면 좌표 획득
-        val bounds = Rect()
-        itemNode.getBoundsInScreen(bounds)
-
-        // 4. 클릭 가능한 노드 찾기
-        val clickableNode = findClickableNode(itemNode)
-
-        Log.d(TAG, "파싱된 콜: 타입=$callType, 시간=$reservationTime, 출발지=$source, 도착지=$destination, 금액=${price}원")
-
-        return ReservationCall(
-            source = source,
-            destination = destination,
-            price = price,
-            bounds = bounds,
-            clickableNode = clickableNode,
-            callType = callType,
-            reservationTime = reservationTime
+        context.logger.logParsingFailed(
+            index = index,
+            missingFields = listOf("all_strategies_failed"),
+            collectedText = collectedText,
+            reason = "모든 파싱 전략 실패 (${strategies.size}개 전략 시도)"
         )
+
+        return null
+    }
+
+    /**
+     * 파싱된 콜 교차 검증
+     * - 가격 범위 체크
+     * - 경로 길이 체크
+     */
+    private fun validateParsedCall(call: ReservationCall, config: ParsingConfig): Boolean {
+        // 1. 가격 범위 체크
+        if (call.price < config.priceMin || call.price > config.priceMax) {
+            Log.w(TAG, "가격 범위 초과: ${call.price} (범위: ${config.priceMin}~${config.priceMax})")
+            return false
+        }
+
+        // 2. 경로 길이 체크
+        if (call.source.length < config.locationMinLength ||
+            call.destination.length < config.locationMinLength) {
+            Log.w(TAG, "경로 길이 부족: '${call.source}' → '${call.destination}' (최소 ${config.locationMinLength}자)")
+            return false
+        }
+
+        return true
     }
 
     /**
@@ -432,6 +441,45 @@ class AnalyzingHandler : StateHandler {
 
         // 클릭 가능한 노드를 못 찾으면 원래 노드 반환
         return node
+    }
+
+    /**
+     * Phase 4: 조건 검증 로그를 "식으로" 출력
+     */
+    private fun logConditionCheck(call: ReservationCall, context: StateContext, eligible: Boolean, index: Int) {
+        val settings = context.filterSettings
+
+        when (settings.conditionMode) {
+            com.example.twinme.domain.interfaces.ConditionMode.CONDITION_1_2 -> {
+                val amountCheck = call.price >= settings.minAmount
+                val hasKeyword = settings.keywords.any { keyword ->
+                    call.source.contains(keyword, ignoreCase = true) ||
+                    call.destination.contains(keyword, ignoreCase = true)
+                }
+                val keywordCheck = hasKeyword && call.price >= settings.keywordMinAmount
+
+                Log.d(TAG, """
+                    3️⃣ 🔍 [조건 검증] 콜 #$index
+                    3️⃣    - 금액: ${call.price} >= ${settings.minAmount} → ${if (amountCheck) "✅" else "❌"} $amountCheck
+                    3️⃣    - 키워드 포함: ${settings.keywords.joinToString(",")} → ${if (hasKeyword) "✅" else "❌"} $hasKeyword
+                    3️⃣    - 키워드+금액: ${call.price} >= ${settings.keywordMinAmount} → ${if (keywordCheck) "✅" else "❌"} $keywordCheck
+                    3️⃣    - 최종 결과: ${if (eligible) "✅ 수락" else "❌ 거부"}
+                """.trimIndent())
+            }
+            com.example.twinme.domain.interfaces.ConditionMode.CONDITION_3 -> {
+                val isIncheonAirport = INCHEON_AIRPORT_KEYWORDS.any { keyword ->
+                    call.source.contains(keyword, ignoreCase = true)
+                }
+                val amountCheck = call.price >= settings.airportMinAmount
+
+                Log.d(TAG, """
+                    3️⃣ 🔍 [조건 검증] 콜 #$index
+                    3️⃣    - 인천공항 출발: ${call.source} → ${if (isIncheonAirport) "✅" else "❌"} $isIncheonAirport
+                    3️⃣    - 금액: ${call.price} >= ${settings.airportMinAmount} → ${if (amountCheck) "✅" else "❌"} $amountCheck
+                    3️⃣    - 최종 결과: ${if (eligible) "✅ 수락" else "❌ 거부"}
+                """.trimIndent())
+            }
+        }
     }
 
     /**

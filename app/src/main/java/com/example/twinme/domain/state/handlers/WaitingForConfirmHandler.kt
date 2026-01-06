@@ -29,6 +29,18 @@ class WaitingForConfirmHandler : StateHandler {
     override fun handle(node: AccessibilityNodeInfo, context: StateContext): StateResult {
         Log.d(TAG, "수락 확인 버튼 찾는 중...")
 
+        // ⭐ Phase 4: 화면 상태 스냅샷 로그 추가
+        val screenTexts = mutableListOf<String>()
+        collectScreenTexts(node, screenTexts)
+        val confirmButtonVisible = node.findAccessibilityNodeInfosByViewId(CONFIRM_BUTTON_ID).isNotEmpty()
+
+        context.logger.logScreenCheck(
+            state = CallAcceptState.WAITING_FOR_CONFIRM,
+            targetButtonVisible = confirmButtonVisible,
+            screenTextSummary = screenTexts.take(5).joinToString(", "),
+            callKey = context.eligibleCall?.callKey ?: ""
+        )
+
         // 사용자 수동 조작 감지 (뒤로가기)
         val hasAcceptButton = node.findAccessibilityNodeInfosByViewId(CONFIRM_BUTTON_ID).isNotEmpty()
         val hasListScreen = node.findAccessibilityNodeInfosByText("예약콜 리스트").isNotEmpty()
@@ -50,21 +62,36 @@ class WaitingForConfirmHandler : StateHandler {
             )
         }
 
+        // ⭐⭐ Phase 4: 버튼 탐색 시작 로그
+        Log.d(TAG, "6️⃣ 🔍 [버튼 탐색 시작] state=WAITING_FOR_CONFIRM, target=$CONFIRM_BUTTON_ID")
+
         // 1. View ID로 버튼 검색 (우선순위 1)
         var confirmButton = context.findNode(node, CONFIRM_BUTTON_ID)
         var foundBy = "view_id"
+        var searchMethod = "VIEW_ID"
 
-        // 2. View ID로 못 찾으면 텍스트 기반 검색 (Fallback)
-        if (confirmButton == null) {
-            Log.w(TAG, "View ID로 수락 확인 버튼을 찾지 못함 - 텍스트 기반 검색 시도")
+        if (confirmButton != null) {
+            // ⭐ Phase 4: ViewID HIT 로그
+            Log.d(TAG, "6️⃣ ✅ [ViewID HIT] $CONFIRM_BUTTON_ID")
+        } else {
+            // ⭐ Phase 4: ViewID MISS 로그
+            Log.w(TAG, "6️⃣ ❌ [ViewID MISS] $CONFIRM_BUTTON_ID → fallback")
+
+            // 2. 텍스트 기반 검색 (Fallback)
+            Log.d(TAG, "6️⃣ 🔍 [TEXT SEARCH] keywords=${FALLBACK_TEXTS.joinToString(",")} → searching...")
 
             for (text in FALLBACK_TEXTS) {
                 confirmButton = context.findNodeByText(node, text)
                 if (confirmButton != null) {
                     foundBy = "text:$text"
-                    Log.i(TAG, "텍스트 기반으로 버튼 발견: $text")
+                    searchMethod = "TEXT"
+                    Log.i(TAG, "6️⃣ ✅ [TEXT FOUND] $text")
                     break
                 }
+            }
+
+            if (confirmButton == null) {
+                Log.w(TAG, "6️⃣ ❌ [TEXT MISS] 모든 fallback 텍스트 검색 실패")
             }
         }
 
@@ -93,6 +120,10 @@ class WaitingForConfirmHandler : StateHandler {
         val centerX = bounds.centerX().toFloat()
         val centerY = bounds.centerY().toFloat()
 
+        // ⭐⭐ Phase 4: 최종 버튼 결정 로그
+        val nodeDesc = "Button{id=${confirmButton.viewIdResourceName}, text=${confirmButton.text}, clickable=${confirmButton.isClickable}, bounds=$bounds}"
+        Log.i(TAG, "6️⃣ 🎯 [버튼 결정] method=$searchMethod, node=$nodeDesc")
+
         // 4. 제스처 클릭 시도 (원본 APK 방식: dispatchGesture)
         Log.d(TAG, "수락 확인 버튼 클릭 시도 (검색 방법: $foundBy, 좌표: $centerX, $centerY)")
         val clickStartTime = System.currentTimeMillis()
@@ -100,11 +131,15 @@ class WaitingForConfirmHandler : StateHandler {
         val elapsedMs = System.currentTimeMillis() - clickStartTime
 
         // 5. 클릭 결과 로깅 (검색 방법 포함)
-        context.logger.logNodeClick(
-            nodeId = if (foundBy == "view_id") CONFIRM_BUTTON_ID else foundBy,
-            success = success,
-            state = targetState,
-            elapsedMs = elapsedMs
+        // ⭐ Phase 4: logNodeClick → logAcceptStep으로 변경, callKey 추가
+        context.logger.logAcceptStep(
+            step = 3,
+            stepName = "WAITING_FOR_CONFIRM",  // LocalLogger가 인식할 수 있는 이름
+            targetId = if (foundBy == "view_id") CONFIRM_BUTTON_ID else foundBy,
+            buttonFound = true,
+            clickSuccess = success,
+            elapsedMs = elapsedMs,
+            callKey = context.eligibleCall?.callKey ?: ""
         )
 
         // 4. 결과 반환
@@ -120,6 +155,21 @@ class WaitingForConfirmHandler : StateHandler {
                 errorState = CallAcceptState.ERROR_UNKNOWN,
                 reason = "수락 확인 버튼 클릭 실패"
             )
+        }
+    }
+
+    /**
+     * Phase 4: 화면의 주요 텍스트 수집 (최대 10개)
+     */
+    private fun collectScreenTexts(node: AccessibilityNodeInfo, texts: MutableList<String>) {
+        if (texts.size >= 10) return
+
+        node.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            if (!texts.contains(it)) texts.add(it)
+        }
+
+        for (i in 0 until node.childCount) {
+            node.getChild(i)?.let { collectScreenTexts(it, texts) }
         }
     }
 }

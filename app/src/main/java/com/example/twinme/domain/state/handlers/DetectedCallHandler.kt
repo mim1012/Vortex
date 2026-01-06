@@ -21,7 +21,10 @@ class DetectedCallHandler : StateHandler {
     companion object {
         private const val TAG = "DetectedCallHandler"
         private const val ACCEPT_BUTTON_ID = "com.kakao.taxi.driver:id/btn_call_accept"
+        private const val MAP_VIEW_ID = "com.kakao.taxi.driver:id/map_view"  // 상세 화면 지도 뷰
+        private const val CLOSE_BUTTON_ID = "com.kakao.taxi.driver:id/action_close"  // 상세 화면 닫기 버튼
         private val FALLBACK_TEXTS = listOf("콜 수락", "수락", "승낙", "accept")
+        private val DETAIL_SCREEN_TEXTS = listOf("예약콜 상세", "예약콜", "출발지", "도착지")
     }
 
     override val targetState: CallAcceptState = CallAcceptState.DETECTED_CALL
@@ -29,21 +32,63 @@ class DetectedCallHandler : StateHandler {
     override fun handle(node: AccessibilityNodeInfo, context: StateContext): StateResult {
         Log.d(TAG, "DETECTED_CALL 진입 - 화면 검증 시작")
 
-        // ⭐ 1. 화면 전환 검증 (콜 상세 화면인지 확인)
-        val hasDetailScreen = node.findAccessibilityNodeInfosByText("예약콜 상세").isNotEmpty()
-                || node.findAccessibilityNodeInfosByText("예약콜").isNotEmpty()
+        // ⭐ 1. 화면 전환 검증 (2단계 Fallback: View ID → 텍스트)
+        var hasDetailScreen = false
+        var detectionMethod = ""
 
+        // 1-1. View ID 기반 검증 (우선순위 1)
+        val hasBtnCallAccept = findNodeByViewId(node, ACCEPT_BUTTON_ID) != null
+        val hasMapView = findNodeByViewId(node, MAP_VIEW_ID) != null
+        val hasCloseButton = findNodeByViewId(node, CLOSE_BUTTON_ID) != null
+
+        if (hasBtnCallAccept || hasMapView || hasCloseButton) {
+            hasDetailScreen = true
+            detectionMethod = when {
+                hasBtnCallAccept -> "view_id:btn_call_accept"
+                hasMapView -> "view_id:map_view"
+                else -> "view_id:action_close"
+            }
+            Log.d(TAG, "✅ View ID로 상세 화면 감지 성공 ($detectionMethod)")
+        }
+
+        // 1-2. 텍스트 기반 검증 (Fallback, 우선순위 2)
         if (!hasDetailScreen) {
-            Log.w(TAG, "⚠️ 콜 상세 화면이 아님 - 클릭 실패로 간주 → CLICKING_ITEM 복귀")
+            Log.d(TAG, "View ID 검증 실패 - 텍스트 기반 검증 시도")
+
+            for (text in DETAIL_SCREEN_TEXTS) {
+                if (node.findAccessibilityNodeInfosByText(text).isNotEmpty()) {
+                    hasDetailScreen = true
+                    detectionMethod = "text:$text"
+                    Log.d(TAG, "✅ 텍스트로 상세 화면 감지 성공 ($detectionMethod)")
+                    break
+                }
+            }
+        }
+
+        // 1-3. 모든 검증 실패
+        if (!hasDetailScreen) {
+            Log.w(TAG, "⚠️ 콜 상세 화면이 아님 (View ID 및 텍스트 검증 모두 실패) - 클릭 실패로 간주 → CLICKING_ITEM 복귀")
 
             // CLICKING_ITEM으로 복귀하여 재클릭 시도
             return StateResult.Error(
                 CallAcceptState.CLICKING_ITEM,
-                "화면 전환 실패 - 재클릭 필요"
+                "화면 전환 실패 - 재클릭 필요 (detection failed)"
             )
         }
 
-        Log.d(TAG, "✅ 콜 상세 화면 검증 완료 - 버튼 검색 시작")
+        Log.d(TAG, "✅ 콜 상세 화면 검증 완료 (method: $detectionMethod) - 버튼 검색 시작")
+
+        // ⭐ Phase 4: 화면 상태 스냅샷 로그 추가
+        val screenTexts = mutableListOf<String>()
+        collectScreenTexts(node, screenTexts)
+        val acceptButtonVisible = findNodeByViewId(node, ACCEPT_BUTTON_ID) != null
+
+        context.logger.logScreenCheck(
+            state = CallAcceptState.DETECTED_CALL,
+            targetButtonVisible = acceptButtonVisible,
+            screenTextSummary = screenTexts.take(5).joinToString(", "),
+            callKey = context.eligibleCall?.callKey ?: ""
+        )
 
         // ⭐ 2. "이미 배차" 감지 (원본 APK 방식: 라인 601-604)
         if (node.findAccessibilityNodeInfosByText("이미 배차").isNotEmpty()) {
@@ -54,21 +99,36 @@ class DetectedCallHandler : StateHandler {
             )
         }
 
+        // ⭐⭐ Phase 4: 버튼 탐색 시작 로그
+        Log.d(TAG, "5️⃣ 🔍 [버튼 탐색 시작] state=DETECTED_CALL, target=$ACCEPT_BUTTON_ID")
+
         // 1. View ID로 버튼 검색 (우선순위 1)
         var acceptButton = context.findNode(node, ACCEPT_BUTTON_ID)
         var foundBy = "view_id"
+        var searchMethod = "VIEW_ID"
 
-        // 2. View ID로 못 찾으면 텍스트 기반 검색 (Fallback)
-        if (acceptButton == null) {
-            Log.w(TAG, "View ID로 콜 수락 버튼을 찾지 못함 - 텍스트 기반 검색 시도")
+        if (acceptButton != null) {
+            // ⭐ Phase 4: ViewID HIT 로그
+            Log.d(TAG, "5️⃣ ✅ [ViewID HIT] $ACCEPT_BUTTON_ID")
+        } else {
+            // ⭐ Phase 4: ViewID MISS 로그
+            Log.w(TAG, "5️⃣ ❌ [ViewID MISS] $ACCEPT_BUTTON_ID → fallback")
+
+            // 2. 텍스트 기반 검색 (Fallback)
+            Log.d(TAG, "5️⃣ 🔍 [TEXT SEARCH] keywords=${FALLBACK_TEXTS.joinToString(",")} → searching...")
 
             for (text in FALLBACK_TEXTS) {
                 acceptButton = context.findNodeByText(node, text)
                 if (acceptButton != null) {
                     foundBy = "text:$text"
-                    Log.i(TAG, "텍스트 기반으로 버튼 발견: $text")
+                    searchMethod = "TEXT"
+                    Log.i(TAG, "5️⃣ ✅ [TEXT FOUND] $text")
                     break
                 }
+            }
+
+            if (acceptButton == null) {
+                Log.w(TAG, "5️⃣ ❌ [TEXT MISS] 모든 fallback 텍스트 검색 실패")
             }
         }
 
@@ -97,6 +157,10 @@ class DetectedCallHandler : StateHandler {
         val centerX = bounds.centerX().toFloat()
         val centerY = bounds.centerY().toFloat()
 
+        // ⭐⭐ Phase 4: 최종 버튼 결정 로그
+        val nodeDesc = "Button{id=${acceptButton.viewIdResourceName}, text=${acceptButton.text}, clickable=${acceptButton.isClickable}, bounds=$bounds}"
+        Log.i(TAG, "5️⃣ 🎯 [버튼 결정] method=$searchMethod, node=$nodeDesc")
+
         // 4. 제스처 클릭 시도 (원본 APK 방식: dispatchGesture)
         Log.d(TAG, "콜 수락 버튼 클릭 시도 (검색 방법: $foundBy, 좌표: $centerX, $centerY)")
         val clickStartTime = System.currentTimeMillis()
@@ -104,11 +168,15 @@ class DetectedCallHandler : StateHandler {
         val elapsedMs = System.currentTimeMillis() - clickStartTime
 
         // 5. 클릭 결과 로깅 (검색 방법 포함)
-        context.logger.logNodeClick(
-            nodeId = if (foundBy == "view_id") ACCEPT_BUTTON_ID else foundBy,
-            success = success,
-            state = targetState,
-            elapsedMs = elapsedMs
+        // ⭐ Phase 4: logNodeClick → logAcceptStep으로 변경, callKey 추가
+        context.logger.logAcceptStep(
+            step = 2,
+            stepName = "DETECTED_CALL",  // LocalLogger가 인식할 수 있는 이름
+            targetId = if (foundBy == "view_id") ACCEPT_BUTTON_ID else foundBy,
+            buttonFound = true,
+            clickSuccess = success,
+            elapsedMs = elapsedMs,
+            callKey = context.eligibleCall?.callKey ?: ""
         )
 
         // 4. 결과 반환
@@ -124,6 +192,43 @@ class DetectedCallHandler : StateHandler {
                 errorState = CallAcceptState.ERROR_UNKNOWN,
                 reason = "콜 수락 버튼 클릭 실패"
             )
+        }
+    }
+
+    /**
+     * View ID로 노드 찾기 (재귀 탐색)
+     * ViewIdParsingStrategy와 동일한 로직
+     */
+    private fun findNodeByViewId(rootNode: AccessibilityNodeInfo, viewId: String): AccessibilityNodeInfo? {
+        // 현재 노드 확인
+        if (rootNode.viewIdResourceName == viewId) {
+            return rootNode
+        }
+
+        // 자식 노드 재귀 탐색
+        for (i in 0 until rootNode.childCount) {
+            val child = rootNode.getChild(i) ?: continue
+            val result = findNodeByViewId(child, viewId)
+            if (result != null) {
+                return result
+            }
+        }
+
+        return null
+    }
+
+    /**
+     * Phase 4: 화면의 주요 텍스트 수집 (최대 10개)
+     */
+    private fun collectScreenTexts(node: AccessibilityNodeInfo, texts: MutableList<String>) {
+        if (texts.size >= 10) return
+
+        node.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            if (!texts.contains(it)) texts.add(it)
+        }
+
+        for (i in 0 until node.childCount) {
+            node.getChild(i)?.let { collectScreenTexts(it, texts) }
         }
     }
 }

@@ -267,6 +267,7 @@ object RemoteLogger {
 
     /**
      * 개별 콜 파싱 결과 로그 (버퍼에 추가)
+     * Phase 1: confidence, debugInfo 추가
      */
     fun logCallParsed(
         index: Int,
@@ -276,8 +277,19 @@ object RemoteLogger {
         callType: String,
         reservationTime: String,
         eligible: Boolean,
-        rejectReason: String?
+        rejectReason: String?,
+        confidence: String = "UNKNOWN",
+        debugInfo: Map<String, Any> = emptyMap()
     ) {
+        // debugInfo를 JSON 변환 가능한 맵으로 필터링
+        val filteredDebugInfo = debugInfo.mapValues { entry ->
+            when (val value = entry.value) {
+                is String, is Number, is Boolean -> value
+                is List<*> -> value.joinToString(", ")
+                else -> value.toString()
+            }
+        }
+
         addToBuffer(
             EventType.CALL_PARSED,
             mapOf(
@@ -288,7 +300,9 @@ object RemoteLogger {
                 "callType" to callType,
                 "reservationTime" to reservationTime,
                 "eligible" to eligible,
-                "reject_reason" to (rejectReason ?: "")
+                "reject_reason" to (rejectReason ?: ""),
+                "confidence" to confidence,  // Phase 1: 파싱 신뢰도
+                "debug_info" to filteredDebugInfo  // Phase 1: 디버깅 정보
             )
         )
     }
