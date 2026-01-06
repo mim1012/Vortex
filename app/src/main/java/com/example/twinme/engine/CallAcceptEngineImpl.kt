@@ -124,6 +124,10 @@ class CallAcceptEngineImpl @Inject constructor(
                 // 원본 APK 방식: dispatchGesture() 사용
                 // AccessibilityService의 singleton instance를 통해 제스처 실행
                 com.example.twinme.service.CallAcceptAccessibilityService.instance?.performGestureClick(x, y) ?: false
+            },
+            performShellTap = { x, y ->
+                // ADB input tap과 동일한 방식: shell 명령어 실행
+                com.example.twinme.service.CallAcceptAccessibilityService.instance?.performShellTap(x, y) ?: false
             }
         )
     }

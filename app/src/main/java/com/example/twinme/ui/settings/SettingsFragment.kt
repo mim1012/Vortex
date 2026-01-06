@@ -124,8 +124,8 @@ class SettingsFragment : Fragment() {
     private fun showStartTimePicker() {
         val timePicker = MaterialTimePicker.Builder()
             .setTimeFormat(TimeFormat.CLOCK_24H)
-            .setHour(9)
-            .setMinute(0)
+            .setHour(0)
+            .setMinute(1)
             .setTitleText("시작 시간 선택")
             .build()
 
@@ -146,8 +146,8 @@ class SettingsFragment : Fragment() {
     private fun showEndTimePicker() {
         val timePicker = MaterialTimePicker.Builder()
             .setTimeFormat(TimeFormat.CLOCK_24H)
-            .setHour(18)
-            .setMinute(0)
+            .setHour(23)
+            .setMinute(59)
             .setTitleText("종료 시간 선택")
             .build()
 

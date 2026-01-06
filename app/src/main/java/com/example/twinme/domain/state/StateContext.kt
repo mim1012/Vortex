@@ -57,6 +57,15 @@ data class StateContext(
     val performGestureClick: (x: Float, y: Float) -> Boolean,
 
     /**
+     * Shell 명령어로 input tap 실행 (ADB와 동일한 방식)
+     * dispatchGesture가 작동하지 않는 경우 대안
+     * @param x 클릭할 X 좌표
+     * @param y 클릭할 Y 좌표
+     * @return 클릭 성공 여부
+     */
+    val performShellTap: (x: Float, y: Float) -> Boolean,
+
+    /**
      * AnalyzingHandler → ClickingItemHandler로 전달할 콜 정보
      * AnalyzingHandler에서 조건 충족 콜을 찾으면 이 필드에 저장
      */

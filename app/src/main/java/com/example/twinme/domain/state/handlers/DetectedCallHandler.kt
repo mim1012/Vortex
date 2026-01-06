@@ -210,24 +210,28 @@ class DetectedCallHandler : StateHandler {
         val nodeDesc = "Button{id=${acceptButton.viewIdResourceName}, text=${acceptButton.text}, clickable=${acceptButton.isClickable}, bounds=$bounds}"
         Log.i(TAG, "5️⃣ 🎯 [버튼 결정] method=$searchMethod, node=$nodeDesc")
 
-        // 4. 클릭 시도 - 제스처 클릭 우선 (performAction이 작동 안 하는 경우 대비)
+        // 4. 클릭 시도 - Shell input tap 사용 (ADB와 동일한 방식, 가장 확실함)
         Log.d(TAG, "콜 수락 버튼 클릭 시도 (검색 방법: $foundBy, 좌표: $centerX, $centerY)")
         val clickStartTime = System.currentTimeMillis()
 
-        // 4-1. 제스처 클릭 먼저 시도 (좌표 기반, 더 확실함)
-        var success = context.performGestureClick(centerX, centerY)
-        var clickMethod = "dispatchGesture"
+        // 4-1. Shell input tap 시도 (ADB와 동일, 가장 확실함)
+        var success = context.performShellTap(centerX, centerY)
+        var clickMethod = "shell_input_tap"
+        Log.d(TAG, "🔧 Shell input tap 결과: $success")
 
-        if (success) {
-            Log.d(TAG, "✅ 제스처 클릭 전송됨")
-        } else {
-            // 4-2. 실패 시 performAction 시도
-            Log.w(TAG, "제스처 클릭 실패 → performAction 시도")
+        // 4-2. 실패 시 dispatchGesture 시도
+        if (!success) {
+            Thread.sleep(100)
+            success = context.performGestureClick(centerX, centerY)
+            clickMethod = "dispatchGesture"
+            Log.d(TAG, "제스처 클릭 결과: $success")
+        }
+
+        // 4-3. 그래도 실패 시 performAction 시도
+        if (!success) {
             success = acceptButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
             clickMethod = "performAction"
-            if (success) {
-                Log.d(TAG, "✅ performAction 클릭 성공")
-            }
+            Log.d(TAG, "performAction 결과: $success")
         }
 
         Log.d(TAG, "클릭 방법: $clickMethod, 결과: $success")

@@ -157,4 +157,29 @@ class CallAcceptAccessibilityService : AccessibilityService() {
             false
         }
     }
+
+    /**
+     * Shell 명령어로 input tap 실행 (ADB와 동일한 방식)
+     * dispatchGesture가 작동하지 않는 경우 대안
+     *
+     * @param x 클릭할 X 좌표
+     * @param y 클릭할 Y 좌표
+     * @return 명령 실행 성공 여부
+     */
+    fun performShellTap(x: Float, y: Float): Boolean {
+        return try {
+            val command = "input tap ${x.toInt()} ${y.toInt()}"
+            Log.d(TAG, "🔧 Shell 명령 실행: $command")
+
+            val process = Runtime.getRuntime().exec(arrayOf("sh", "-c", command))
+            val exitCode = process.waitFor()
+
+            Log.d(TAG, "🔧 Shell 결과: exitCode=$exitCode")
+            exitCode == 0
+
+        } catch (e: Exception) {
+            Log.e(TAG, "🔧 Shell 명령 실패: ${e.message}", e)
+            false
+        }
+    }
 }
