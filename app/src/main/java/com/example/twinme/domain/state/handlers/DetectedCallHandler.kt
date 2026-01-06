@@ -210,38 +210,32 @@ class DetectedCallHandler : StateHandler {
         val nodeDesc = "Button{id=${acceptButton.viewIdResourceName}, text=${acceptButton.text}, clickable=${acceptButton.isClickable}, bounds=$bounds}"
         Log.i(TAG, "5️⃣ 🎯 [버튼 결정] method=$searchMethod, node=$nodeDesc")
 
-        // 4. 클릭 시도 - Shell input tap 사용 (ADB와 동일한 방식, 가장 확실함)
+        // 4. 클릭 시도 - performAction만 사용! (MediaEnhanced 권장 구조)
         Log.d(TAG, "콜 수락 버튼 클릭 시도 (검색 방법: $foundBy, 좌표: $centerX, $centerY)")
         val clickStartTime = System.currentTimeMillis()
 
-        // 4-1. Shell input tap 시도 (ADB와 동일, 가장 확실함)
-        var success = context.performShellTap(centerX, centerY)
-        var clickMethod = "shell_input_tap"
-        Log.d(TAG, "🔧 Shell input tap 결과: $success")
+        // ⭐ 4-1. performAction 1차 시도
+        var success = acceptButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        var clickMethod = "performAction"
+        Log.d(TAG, "✅ performAction 1차 결과: $success")
 
-        // 4-2. 실패 시 dispatchGesture 시도
+        // ⭐ 4-2. 실패 시 focus 후 재시도
         if (!success) {
-            Thread.sleep(100)
-            success = context.performGestureClick(centerX, centerY)
-            clickMethod = "dispatchGesture"
-            Log.d(TAG, "제스처 클릭 결과: $success")
-        }
-
-        // 4-3. 그래도 실패 시 performAction 시도
-        if (!success) {
+            Log.w(TAG, "performAction 1차 실패 → FOCUS 후 재시도")
+            acceptButton.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+            Thread.sleep(50)
             success = acceptButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            clickMethod = "performAction"
-            Log.d(TAG, "performAction 결과: $success")
+            clickMethod = "performAction+focus"
+            Log.d(TAG, "✅ performAction 2차 결과 (focus 후): $success")
         }
 
-        Log.d(TAG, "클릭 방법: $clickMethod, 결과: $success")
         val elapsedMs = System.currentTimeMillis() - clickStartTime
+        Log.d(TAG, "클릭 방법: $clickMethod, 결과: $success, elapsed=${elapsedMs}ms")
 
-        // 5. 클릭 결과 로깅 (검색 방법 포함)
-        // ⭐ Phase 4: logNodeClick → logAcceptStep으로 변경, callKey 추가
+        // 5. 클릭 결과 로깅
         context.logger.logAcceptStep(
             step = 2,
-            stepName = "DETECTED_CALL",  // LocalLogger가 인식할 수 있는 이름
+            stepName = "DETECTED_CALL",
             targetId = if (foundBy == "view_id") ACCEPT_BUTTON_ID else foundBy,
             buttonFound = true,
             clickSuccess = success,
@@ -249,36 +243,23 @@ class DetectedCallHandler : StateHandler {
             callKey = context.eligibleCall?.callKey ?: ""
         )
 
-        // 4. 결과 반환 - 클릭 후 다이얼로그 대기
-        return if (success) {
-            Log.d(TAG, "콜 수락 버튼 클릭 성공 - 다이얼로그 대기 시작")
-
-            // 클릭 후 즉시 다이얼로그 확인
-            Thread.sleep(300)  // 다이얼로그 출현 대기
-
-            // 다이얼로그가 바로 나타났는지 확인
-            val dialogAppeared = checkConfirmDialogVisible(node)
-            if (dialogAppeared) {
-                Log.i(TAG, "✅ 다이얼로그 즉시 감지 → WAITING_FOR_CONFIRM 전환")
-                resetState()
-                StateResult.Transition(
-                    nextState = CallAcceptState.WAITING_FOR_CONFIRM,
-                    reason = "콜 수락 버튼 클릭 후 다이얼로그 감지"
-                )
-            } else {
-                // 다이얼로그 아직 안 나타남 - 대기 상태로 전환
-                Log.d(TAG, "⏳ 다이얼로그 미출현 - 대기 상태로 전환")
-                clickedAndWaiting = true
-                waitRetryCount = 0
-                StateResult.NoChange
-            }
-        } else {
-            Log.e(TAG, "콜 수락 버튼 클릭 실패")
-            StateResult.Error(
+        // ⭐ 4-3. 그래도 실패 시 클릭 실패 처리 (재시도 X)
+        if (!success) {
+            Log.e(TAG, "❌ 콜 수락 버튼 클릭 최종 실패")
+            resetState()
+            return StateResult.Error(
                 errorState = CallAcceptState.ERROR_UNKNOWN,
-                reason = "콜 수락 버튼 클릭 실패"
+                reason = "콜 수락 버튼 클릭 실패 (performAction+focus 모두 실패)"
             )
         }
+
+        // ⭐ 4-4. 성공 시 즉시 다음 상태로 전이 (WAITING_FOR_CONFIRM)
+        Log.i(TAG, "✅ 콜 수락 버튼 클릭 성공 → WAITING_FOR_CONFIRM 전환")
+        resetState()
+        return StateResult.Transition(
+            nextState = CallAcceptState.WAITING_FOR_CONFIRM,
+            reason = "콜 수락 버튼 클릭 성공"
+        )
     }
 
     /**

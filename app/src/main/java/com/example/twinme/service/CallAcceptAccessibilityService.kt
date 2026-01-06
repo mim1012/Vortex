@@ -112,16 +112,17 @@ class CallAcceptAccessibilityService : AccessibilityService() {
      */
     fun performGestureClick(x: Float, y: Float): Boolean {
         return try {
-            // 1. Path 생성 및 터치 포인트 설정
+            // 1. Path 생성 - 짧은 스와이프로 변경 (터치 → 약간 이동 → 터치 종료)
             val path = Path().apply {
                 moveTo(x, y)
+                lineTo(x + 1f, y + 1f)  // 1픽셀 이동 (탭보다 확실한 터치 인식)
             }
 
-            // 2. StrokeDescription 생성 - duration 150ms로 증가 (더 확실한 터치)
+            // 2. StrokeDescription 생성 - duration 50ms (빠른 탭)
             val stroke = GestureDescription.StrokeDescription(
                 path,
                 0L,    // startTime
-                150L   // duration: 100ms → 150ms로 증가
+                50L    // duration: 50ms (짧은 탭)
             )
 
             // 3. GestureDescription 빌드
