@@ -27,8 +27,6 @@ class RefreshingHandler : StateHandler {
     override val targetState = CallAcceptState.REFRESHING
 
     override fun handle(node: AccessibilityNodeInfo, context: StateContext): StateResult {
-        Log.d(TAG, "새로고침 버튼 찾는 중...")
-
         // 1. 새로고침 버튼 검색
         val refreshButton = node.findAccessibilityNodeInfosByViewId(REFRESH_BUTTON_ID)
             .firstOrNull()
@@ -38,11 +36,9 @@ class RefreshingHandler : StateHandler {
             it.isClickable && it.performAction(AccessibilityNodeInfo.ACTION_CLICK)
         } ?: false
 
-        // 2. 서버 로그 전송 (5초 간격 체크)
+        // 2. 서버 로그 전송 (5초 간격)
         val currentTime = System.currentTimeMillis()
-        val shouldSendLog = (currentTime - lastLogTime) >= MIN_LOG_INTERVAL_MS
-
-        if (shouldSendLog) {
+        if ((currentTime - lastLogTime) >= MIN_LOG_INTERVAL_MS) {
             com.example.twinme.logging.RemoteLogger.logRefreshAttempt(
                 buttonFound = buttonFound,
                 clickSuccess = clickSuccess,
@@ -50,21 +46,16 @@ class RefreshingHandler : StateHandler {
                 targetDelay = context.refreshTargetDelay ?: 0L
             )
             lastLogTime = currentTime
-            Log.d(TAG, "서버 로그 전송 (마지막: ${currentTime}ms)")
-        } else {
-            val remaining = MIN_LOG_INTERVAL_MS - (currentTime - lastLogTime)
-            Log.v(TAG, "서버 로그 스킵 (다음까지: ${remaining}ms)")
         }
 
         // 3. 결과 반환
         return if (clickSuccess) {
-            Log.d(TAG, "새로고침 버튼 클릭 성공 → ANALYZING 전환")
             StateResult.Transition(
                 CallAcceptState.ANALYZING,
-                "새로고침 버튼 클릭 성공"
+                "새로고침 성공"
             )
         } else {
-            Log.e(TAG, "새로고침 버튼 클릭 실패")
+            Log.w(TAG, "새로고침 버튼 ${if (buttonFound) "클릭 실패" else "미발견"}")
             StateResult.Error(
                 CallAcceptState.ERROR_UNKNOWN,
                 "새로고침 버튼 ${if (buttonFound) "클릭 실패" else "미발견"}"

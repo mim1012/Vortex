@@ -37,6 +37,7 @@ class SettingsManager(context: Context) : IFilterSettings, ITimeSettings, IUiSet
         private const val KEY_KEYWORDS = "keywords"
         private const val KEY_REFRESH_DELAY = "refresh_delay"
         private const val KEY_CLICK_EFFECT_ENABLED = "click_effect_enabled"
+        private const val KEY_ALLOW_HOURLY_RESERVATION = "allow_hourly_reservation"
 
         // 싱글톤
         @Volatile
@@ -155,6 +156,16 @@ class SettingsManager(context: Context) : IFilterSettings, ITimeSettings, IUiSet
             }
         }
 
+    // IFilterSettings 구현: 1시간 예약 허용 여부
+    override var allowHourlyReservation: Boolean
+        get() = prefs.getBoolean(KEY_ALLOW_HOURLY_RESERVATION, false)
+        set(value) {
+            val oldValue = allowHourlyReservation
+            prefs.edit().putBoolean(KEY_ALLOW_HOURLY_RESERVATION, value).apply()
+            if (oldValue != value) {
+                RemoteLogger.logConfigChange("allow_hourly_reservation", oldValue, value)
+            }
+        }
 
     // IUiSettings 구현
     override var refreshDelay: Float

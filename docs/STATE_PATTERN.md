@@ -194,32 +194,132 @@ class CallListHandler : StateHandler {
 class DetectedCallHandler : StateHandler {
     companion object {
         private const val ACCEPT_BUTTON_ID = "com.kakao.taxi.driver:id/btn_call_accept"
+        private const val CONFIRM_BUTTON_ID = "com.kakao.taxi.driver:id/btn_positive"
+        private const val MAP_VIEW_ID = "com.kakao.taxi.driver:id/map_view"
+        private val FALLBACK_TEXTS = listOf("수락", "직접결제 수락", "자동결제 수락", "콜 수락")
+        private const val MAX_CLICK_RETRY = 5
     }
+
+    private var clickedAndWaiting = false
+    private var waitRetryCount = 0
 
     override val targetState = CallAcceptState.DETECTED_CALL
 
     override fun handle(node: AccessibilityNodeInfo, context: StateContext): StateResult {
-        // 1. 콜 수락 버튼 검색
-        val acceptButton = context.findNode(node, ACCEPT_BUTTON_ID)
-            ?: return StateResult.NoChange
-
-        if (!acceptButton.isClickable) return StateResult.NoChange
-
-        // 2. 버튼 클릭 시도
-        val success = acceptButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-
-        // 3. 결과 반환
-        return if (success) {
-            StateResult.Transition(
+        // 0. 확인 다이얼로그가 이미 떠 있는지 먼저 확인
+        if (checkConfirmDialogVisible(node)) {
+            resetState()
+            return StateResult.Transition(
                 nextState = CallAcceptState.WAITING_FOR_CONFIRM,
-                reason = "콜 수락 버튼 클릭 성공"
-            )
-        } else {
-            StateResult.Error(
-                errorState = CallAcceptState.ERROR_UNKNOWN,
-                reason = "콜 수락 버튼 클릭 실패"
+                reason = "확인 다이얼로그 감지됨"
             )
         }
+
+        // 0-1. 클릭 후 대기 중인데 다이얼로그가 안 나타난 경우
+        if (clickedAndWaiting) {
+            waitRetryCount++
+            if (waitRetryCount >= MAX_CLICK_RETRY) {
+                resetState()
+                // 재클릭 시도
+            } else {
+                return StateResult.NoChange // 계속 대기
+            }
+        }
+
+        // 1. 화면 검증 (View ID 기반)
+        val hasBtnCallAccept = findNodeByViewId(node, ACCEPT_BUTTON_ID) != null
+        val hasMapView = findNodeByViewId(node, MAP_VIEW_ID) != null
+
+        if (!hasBtnCallAccept && !hasMapView) {
+            // 화면 전환 실패 - 재클릭 필요
+            return StateResult.Error(
+                CallAcceptState.CLICKING_ITEM,
+                "화면 전환 실패 - 재클릭 필요"
+            )
+        }
+
+        // 2. "이미 배차" 감지
+        if (node.findAccessibilityNodeInfosByText("이미 배차").isNotEmpty()) {
+            return StateResult.Error(
+                CallAcceptState.ERROR_ASSIGNED,
+                "이미 다른 기사에게 배차됨"
+            )
+        }
+
+        // 3. 버튼 검색 (View ID 우선)
+        val viewIdNodes = node.findAccessibilityNodeInfosByViewId(ACCEPT_BUTTON_ID)
+        var acceptButton: AccessibilityNodeInfo? = null
+
+        for (foundNode in viewIdNodes) {
+            if (foundNode.isClickable && foundNode.isEnabled) {
+                acceptButton = foundNode
+                break
+            }
+        }
+
+        // 4. 텍스트 fallback
+        if (acceptButton == null) {
+            for (text in FALLBACK_TEXTS) {
+                val nodes = node.findAccessibilityNodeInfosByText(text)
+                for (foundNode in nodes) {
+                    if (foundNode.isClickable && foundNode.isEnabled) {
+                        acceptButton = foundNode
+                        break
+                    }
+                }
+                if (acceptButton != null) break
+            }
+        }
+
+        if (acceptButton == null) return StateResult.NoChange
+
+        // 5. 좌표 계산 및 Shizuku input tap 클릭
+        val bounds = android.graphics.Rect()
+        acceptButton.getBoundsInScreen(bounds)
+        val tapX = bounds.centerX()
+        val tapY = bounds.centerY()
+
+        // 랜덤 지연 (50-150ms)
+        Thread.sleep((50 + Random().nextInt(100)).toLong())
+
+        val success = context.shizukuInputTap(tapX, tapY)
+
+        if (!success) {
+            // Fallback: dispatchGesture
+            val gestureSuccess = context.performGestureClick(tapX.toFloat(), tapY.toFloat())
+            if (!gestureSuccess) {
+                resetState()
+                return StateResult.Error(
+                    errorState = CallAcceptState.ERROR_UNKNOWN,
+                    reason = "콜 수락 버튼 클릭 실패"
+                )
+            }
+        }
+
+        resetState()
+        return StateResult.Transition(
+            nextState = CallAcceptState.WAITING_FOR_CONFIRM,
+            reason = "Shizuku input tap 성공"
+        )
+    }
+
+    private fun checkConfirmDialogVisible(node: AccessibilityNodeInfo): Boolean {
+        return findNodeByViewId(node, CONFIRM_BUTTON_ID) != null
+    }
+
+    private fun resetState() {
+        clickedAndWaiting = false
+        waitRetryCount = 0
+    }
+
+    private fun findNodeByViewId(rootNode: AccessibilityNodeInfo, viewId: String): AccessibilityNodeInfo? {
+        if (rootNode.viewIdResourceName == viewId) return rootNode
+        for (i in 0 until rootNode.childCount) {
+            val child = rootNode.getChild(i) ?: continue
+            val result = findNodeByViewId(child, viewId)
+            if (result != null) return result
+        }
+        return null
     }
 }
 ```
@@ -367,23 +467,40 @@ object StateModule {
     ▼                                                                      │
   DETECTED_CALL                                                            │
     │ [DetectedCallHandler]                                                │
-    │   ├─ 화면 검증 ("예약콜 상세" 텍스트 확인)                             │
+    │   ├─ 확인 다이얼로그 선제 감지 (btn_positive)                          │
+    │   │     └─ 감지됨 → Transition(WAITING_FOR_CONFIRM) 즉시 전환        │
+    │   ├─ 클릭 후 대기 상태 확인 (clickedAndWaiting)                       │
+    │   │     ├─ 대기 중 → NoChange (최대 5회)                             │
+    │   │     └─ 타임아웃 → 재클릭 시도                                     │
+    │   ├─ 화면 검증 (2단계 Fallback)                                       │
+    │   │     ├─ 1️⃣ View ID: btn_call_accept, map_view, action_close       │
+    │   │     ├─ 2️⃣ 텍스트: "예약콜 상세"                                   │
     │   │     └─ 실패 → Error(CLICKING_ITEM) - 재클릭 필요                 │
-    │   ├─ btn_call_accept 버튼 검색 (View ID + 텍스트 fallback)           │
-    │   │     └─ 없음 → NoChange (50ms 후 재시도)                          │
-    │   ├─ 버튼 클릭 (performGestureClick)                                 │
+    │   ├─ "이미 배차" 감지 → Error(ERROR_ASSIGNED)                        │
+    │   ├─ btn_call_accept 버튼 검색 (findAccessibilityNodeInfosByViewId)  │
+    │   │     └─ 실패 시 텍스트 fallback ("수락", "직접결제 수락" 등)       │
+    │   ├─ 좌표 보정 (bounds가 화면 밖이면 (540, 2080) 사용)                │
+    │   ├─ 랜덤 지연 (50-150ms) + Shizuku input tap 클릭                   │
     │   │     ├─ 성공 → Transition(WAITING_FOR_CONFIRM)                   │
-    │   │     └─ 실패 → Error(ERROR_UNKNOWN)                              │
-    │   └─ "이미 배차" 감지 → Error(ERROR_ASSIGNED)                        │
+    │   │     └─ 실패 → dispatchGesture fallback                          │
+    │   └─ Phase 4 로깅 (logScreenCheck, logAcceptStep)                   │
     ▼                                                                      │
   WAITING_FOR_CONFIRM                                                      │
     │ [WaitingForConfirmHandler]                                           │
+    │   ├─ 화면 상태 스냅샷 로그 (logScreenCheck)                          │
+    │   ├─ 사용자 수동 조작 감지 ("예약콜 리스트" 복귀)                     │
+    │   │     └─ 감지됨 → Error(ERROR_TIMEOUT) - 뒤로가기 감지             │
+    │   ├─ "이미 배차" 감지 → Error(ERROR_ASSIGNED)                        │
     │   ├─ btn_positive 버튼 검색 (View ID + 텍스트 fallback)              │
-    │   │     └─ 없음 → NoChange (10ms 후 재시도)                          │
-    │   ├─ 버튼 클릭 (performGestureClick)                                 │
-    │   │     ├─ 성공 → Transition(CALL_ACCEPTED)                         │
-    │   │     └─ 실패 → Error(ERROR_UNKNOWN)                              │
-    │   └─ 타임아웃 (7초) → Error(ERROR_TIMEOUT)                           │
+    │   │     ├─ 텍스트: "수락하기", "확인", "수락"                         │
+    │   │     └─ 없음 → NoChange (재시도)                                  │
+    │   ├─ d4 쓰로틀링 회피: btn_call_accept 감지 시 클릭 금지              │
+    │   │     └─ NoChange (다이얼로그 대기)                                │
+    │   ├─ 랜덤 지연 (50-150ms) + 노드 refresh                             │
+    │   ├─ performAction 클릭 (1차 시도)                                   │
+    │   │     └─ 실패 시 FOCUS 후 재시도 (2차)                             │
+    │   ├─ 클릭 결과 로깅 (logAcceptStep)                                  │
+    │   └─ 성공 → Transition(CALL_ACCEPTED) / 실패 → Error(ERROR_UNKNOWN) │
     ▼                                                                      │
   CALL_ACCEPTED                                                            │
     │ [CallAcceptedHandler]                                                │

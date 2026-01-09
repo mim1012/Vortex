@@ -78,9 +78,11 @@ Vortex는 **하이브리드 클릭 방식**을 사용하여 카카오T 드라이
 | **리소스명** | `btn_call_accept` |
 | **위치** | 콜 상세 화면 하단 |
 | **역할** | 콜 수락 요청 |
-| **클릭 방식** | View ID 검색 + 텍스트 fallback + 좌표 기반 제스처 클릭 |
+| **클릭 방식** | **Shizuku input tap (우선)** → dispatchGesture (fallback) |
+| **Fallback 검색** | 텍스트 기반 ("수락", "직접결제 수락", "자동결제 수락") |
 | **처리 Handler** | `DetectedCallHandler` |
-| **정의 파일** | `domain/state/handlers/DetectedCallHandler.kt:23` |
+| **정의 파일** | `domain/state/handlers/DetectedCallHandler.kt:28` |
+| **특징** | 화면 검증, 다이얼로그 감지, 랜덤 지연(50-150ms) |
 
 ### 3.2 btn_positive
 
@@ -91,9 +93,11 @@ Vortex는 **하이브리드 클릭 방식**을 사용하여 카카오T 드라이
 | **리소스명** | `btn_positive` |
 | **위치** | 확인 다이얼로그 우측 하단 |
 | **역할** | 수락 최종 확인 |
-| **클릭 방식** | View ID 검색 + 텍스트 fallback + 좌표 기반 제스처 클릭 |
+| **클릭 방식** | **performAction** (node refresh + FOCUS retry) |
+| **Fallback 검색** | 텍스트 기반 ("수락하기", "확인", "수락") |
 | **처리 Handler** | `WaitingForConfirmHandler` |
-| **정의 파일** | `domain/state/handlers/WaitingForConfirmHandler.kt:23` |
+| **정의 파일** | `domain/state/handlers/WaitingForConfirmHandler.kt:28` |
+| **특징** | d4 쓰로틀링 회피, 랜덤 지연(50-150ms) |
 
 ### 3.3 콜 리스트 아이템 (View ID 없음)
 
@@ -119,9 +123,140 @@ Vortex는 **하이브리드 클릭 방식**을 사용하여 카카오T 드라이
 
 ---
 
-## 4. View ID 기반 클릭 방식
+## 4. 클릭 방법 전략 (3-Phase Strategy)
 
-### 4.1 동작 원리
+### 4.1 개요
+
+Vortex는 **3단계 클릭 전략**을 사용하여 안정성과 봇 탐지 회피를 동시에 달성합니다:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         3-Phase Click Strategy                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+  Phase 1: Shizuku input tap (Primary) - DetectedCallHandler
+  ──────────────────────────────────────────────────────────
+
+  ✅ 우선순위: 1순위
+  ✅ 사용 Handler: DetectedCallHandler (btn_call_accept)
+  ✅ 방법: Shizuku를 통한 shell 명령어 실행
+
+    cmd.exe /c "adb shell input tap x y"
+
+  ✅ 장점:
+     - 실제 하드웨어 터치와 동일한 이벤트 생성
+     - 봇 탐지 회피 효과 높음
+     - KakaoT 앱의 쓰로틀링 우회 가능
+
+  ✅ 단점:
+     - Shizuku 서비스 필요 (추가 설정)
+     - 실패 시 fallback 필요
+
+
+  Phase 2: performAction (Secondary) - WaitingForConfirmHandler
+  ────────────────────────────────────────────────────────────
+
+  ✅ 우선순위: 2순위
+  ✅ 사용 Handler: WaitingForConfirmHandler (btn_positive)
+  ✅ 방법: AccessibilityNodeInfo의 표준 API
+
+    button.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+
+  ✅ 추가 기능:
+     - node.refresh() 후 클릭 (최신 상태 보장)
+     - 실패 시 FOCUS 후 재시도
+
+  ✅ 장점:
+     - Android 표준 API (안정적)
+     - 추가 권한 불필요
+     - 빠른 응답 속도
+
+  ✅ 단점:
+     - 일부 앱에서 차단 가능
+     - 쓰로틀링에 취약
+
+
+  Phase 3: dispatchGesture (Fallback) - All handlers
+  ───────────────────────────────────────────────────
+
+  ✅ 우선순위: 3순위 (fallback only)
+  ✅ 사용 Handler: DetectedCallHandler (fallback), ClickingItemHandler
+  ✅ 방법: GestureDescription을 통한 좌표 기반 탭
+
+    val path = Path().apply { moveTo(x, y) }
+    val stroke = StrokeDescription(path, 0L, 100L)
+    dispatchGesture(gesture, null, null)
+
+  ✅ 장점:
+     - View ID 없는 요소도 클릭 가능
+     - 정확한 좌표 제어
+
+  ✅ 단점:
+     - bounds가 정확해야 함
+     - 화면 스크롤 시 좌표 변동
+```
+
+### 4.2 Shizuku input tap 상세
+
+**Shizuku란?**
+- ADB 권한을 이용하여 높은 권한의 작업을 수행하는 프레임워크
+- 루팅 없이도 shell 명령어 실행 가능
+- `rikka.shizuku` 라이브러리 사용
+
+**동작 원리:**
+```kotlin
+// StateContext.kt
+fun shizukuInputTap(x: Int, y: Int): Boolean {
+    return try {
+        if (!Shizuku.pingBinder()) {
+            Log.w(TAG, "Shizuku 서비스 미실행")
+            return false
+        }
+
+        val command = "input tap $x $y"
+        val process = Shizuku.newProcess(arrayOf("sh", "-c", command), null, null)
+        val exitCode = process.waitFor()
+
+        exitCode == 0
+    } catch (e: Exception) {
+        Log.e(TAG, "Shizuku input tap 실패", e)
+        false
+    }
+}
+```
+
+**사용 이유:**
+- KakaoT Driver 앱의 **봇 탐지 메커니즘 우회**
+- `performAction`은 accessibility 이벤트로 감지 가능
+- `input tap`은 실제 하드웨어 터치와 구별 불가
+
+**필수 설정:**
+1. Shizuku 앱 설치: [GitHub](https://github.com/RikkaApps/Shizuku)
+2. ADB를 통한 Shizuku 서비스 시작:
+   ```bash
+   adb shell sh /sdcard/Android/data/moe.shizuku.privileged.api/start.sh
+   ```
+3. Vortex에서 Shizuku 권한 허용
+
+### 4.3 랜덤 지연 (Bot Detection Avoidance)
+
+모든 클릭에 **인간적인 랜덤 지연**을 추가하여 봇 탐지를 회피합니다:
+
+```kotlin
+// DetectedCallHandler.kt
+val randomDelay = 50L + Random().nextInt(100)  // 50-150ms
+Thread.sleep(randomDelay)
+```
+
+**추가 보호 장치:**
+- **쓰로틀링 보호**: 1.1-1.4초 간격 (KakaoT의 1초 쓰로틀링 우회)
+- **d4 쓰로틀링 회피**: WaitingForConfirmHandler에서 `btn_call_accept` 감지 시 클릭 금지
+
+---
+
+## 5. View ID 기반 클릭 방식
+
+### 5.1 동작 원리
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -173,7 +308,7 @@ Vortex는 **하이브리드 클릭 방식**을 사용하여 카카오T 드라이
   // success: false = 클릭 액션 실패
 ```
 
-### 4.2 장단점 분석
+### 5.2 장단점 분석
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -218,7 +353,7 @@ Vortex는 **하이브리드 클릭 방식**을 사용하여 카카오T 드라이
      - 카카오T는 현재 미난독화
 ```
 
-### 4.3 대안 방식 비교
+### 5.3 대안 방식 비교
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -245,9 +380,9 @@ Vortex는 **하이브리드 클릭 방식**을 사용하여 카카오T 드라이
 
 ---
 
-## 5. 좌표 기반 클릭 방식 (콜 리스트 아이템)
+## 6. 좌표 기반 클릭 방식 (콜 리스트 아이템)
 
-### 5.1 동작 원리
+### 6.1 동작 원리
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -300,7 +435,7 @@ Vortex는 **하이브리드 클릭 방식**을 사용하여 카카오T 드라이
   val success = dispatchGesture(gesture, null, null)
 ```
 
-### 5.2 왜 좌표 기반을 사용하는가?
+### 6.2 왜 좌표 기반을 사용하는가?
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -323,7 +458,7 @@ Vortex는 **하이브리드 클릭 방식**을 사용하여 카카오T 드라이
      - dispatchGesture로 정확한 탭 이벤트 전송
 ```
 
-### 5.3 원본 APK와의 일치성
+### 6.3 원본 APK와의 일치성
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -352,7 +487,7 @@ Vortex는 **하이브리드 클릭 방식**을 사용하여 카카오T 드라이
   ⭐ Vortex 구현이 원본 APK와 100% 동일
 ```
 
-### 5.4 장단점 분석
+### 6.4 장단점 분석
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -391,9 +526,9 @@ Vortex는 **하이브리드 클릭 방식**을 사용하여 카카오T 드라이
 
 ---
 
-## 6. View ID 변경 시 대응
+## 7. View ID 변경 시 대응
 
-### 6.1 변경 감지 방법
+### 7.1 변경 감지 방법
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -422,7 +557,7 @@ Vortex는 **하이브리드 클릭 방식**을 사용하여 카카오T 드라이
   5. 기존 ID와 비교
 ```
 
-### 6.2 변경 시 수정 절차
+### 7.2 변경 시 수정 절차
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -468,7 +603,7 @@ Vortex는 **하이브리드 클릭 방식**을 사용하여 카카오T 드라이
   4. 자동 클릭 확인
 ```
 
-### 6.3 View ID 관리 모범 사례
+### 7.3 View ID 관리 모범 사례
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -517,9 +652,9 @@ Vortex는 **하이브리드 클릭 방식**을 사용하여 카카오T 드라이
 
 ---
 
-## 6. 디버깅 도구
+## 8. 디버깅 도구
 
-### 6.1 노드 덤프 유틸리티
+### 8.1 노드 덤프 유틸리티
 
 ```kotlin
 /**
@@ -546,7 +681,7 @@ fun dumpAllNodes(rootNode: AccessibilityNodeInfo, depth: Int = 0) {
 // dumpAllNodes(rootInActiveWindow)
 ```
 
-### 6.2 View ID 검색 테스트
+### 8.2 View ID 검색 테스트
 
 ```kotlin
 /**
@@ -575,15 +710,15 @@ fun testViewIdExists(rootNode: AccessibilityNodeInfo, viewId: String): Boolean {
 
 ---
 
-## 7. 참고 자료
+## 9. 참고 자료
 
-### 7.1 Android 공식 문서
+### 9.1 Android 공식 문서
 
 - [AccessibilityService](https://developer.android.com/reference/android/accessibilityservice/AccessibilityService)
 - [AccessibilityNodeInfo](https://developer.android.com/reference/android/view/accessibility/AccessibilityNodeInfo)
 - [findAccessibilityNodeInfosByViewId](https://developer.android.com/reference/android/view/accessibility/AccessibilityNodeInfo#findAccessibilityNodeInfosByViewId(java.lang.String))
 
-### 7.2 관련 파일
+### 9.2 관련 파일
 
 | 파일 | 설명 |
 |------|------|

@@ -63,10 +63,11 @@ The app uses the **State Pattern** to handle different call acceptance states. S
 - `RefreshingHandler`: REFRESHING (performs screen refresh action)
 - `AnalyzingHandler`: ANALYZING (parses call list, filters by price/keyword/time)
 - `ClickingItemHandler`: CLICKING_ITEM (coordinate-based gesture click on eligible call item)
-- `DetectedCallHandler`: DETECTED_CALL (clicks accept button via View ID or text fallback)
-- `WaitingForConfirmHandler`: WAITING_FOR_CONFIRM (clicks confirmation dialog button)
+- `DetectedCallHandler`: DETECTED_CALL (clicks accept button via Shizuku input tap, includes screen validation and confirm dialog detection)
+- `WaitingForConfirmHandler`: WAITING_FOR_CONFIRM (clicks confirmation dialog button with d4 throttle avoidance)
 - `CallAcceptedHandler`: CALL_ACCEPTED (final state, logs success)
 - `TimeoutRecoveryHandler`: TIMEOUT_RECOVERY (recovers from timeout by performing BACK gesture)
+- `ErrorUnknownHandler`: ERROR_UNKNOWN (handles unknown errors)
 
 **State Flow:**
 ```
@@ -95,7 +96,12 @@ IDLE → WAITING_FOR_CALL → LIST_DETECTED → REFRESHING → ANALYZING
 - Monitors `com.kakao.taxi.driver` package (configured in `res/xml/accessibility_service_config.xml`)
 - Forwards accessibility events to engine via `processNode()`
 - **Event-Driven Limitation**: Only updates `cachedRootNode` on `TYPE_WINDOW_CONTENT_CHANGED` or `TYPE_WINDOW_STATE_CHANGED` events. If KakaoT Driver app is already on call list screen when automation starts (no screen change), no event fires and node won't update until next UI change.
-- Implements `performGestureClick(x, y)` for coordinate-based clicking using `dispatchGesture()` API (original APK pattern)
+- **Click Methods** (3-phase strategy):
+  1. **Shizuku input tap** (Primary): Uses `input tap x y` via Shizuku for bot detection avoidance
+  2. **performAction** (Secondary): Standard accessibility click via `ACTION_CLICK`
+  3. **dispatchGesture** (Fallback): Coordinate-based gesture click for reliability
+- **Throttle Protection**: 1.1-1.4 second intervals between clicks to avoid KakaoT throttling
+- **Touch Visualization**: Optional overlay for debugging click coordinates
 
 **FloatingStateService** (`service/FloatingStateService.kt`)
 - Foreground service displaying overlay UI with `@AndroidEntryPoint`
@@ -132,13 +138,23 @@ IDLE → WAITING_FOR_CALL → LIST_DETECTED → REFRESHING → ANALYZING
 
 Referenced in `docs/VIEW_ID_REFERENCE.md`:
 
-**View ID-Based Clicking** (performAction or dispatchGesture with bounds):
-- `com.kakao.taxi.driver:id/btn_call_accept` - Accept button in call detail screen (DetectedCallHandler)
-- `com.kakao.taxi.driver:id/btn_positive` - Confirmation dialog button (WaitingForConfirmHandler)
+**DetectedCallHandler (콜 수락 버튼):**
+- Primary: `com.kakao.taxi.driver:id/btn_call_accept` (View ID)
+- Fallback: Text search ("수락", "직접결제 수락", "자동결제 수락", "콜 수락")
+- Click Method: **Shizuku input tap** → dispatchGesture fallback
+- Screen Validation: View ID (`map_view`, `action_close`) or text ("예약콜 상세")
+- Dialog Detection: Checks for `btn_positive` or "수락하기" text before clicking
 
-**Coordinate-Based Clicking** (dispatchGesture with bounds center):
-- Call list items - ClickingItemHandler uses `bounds.centerX/centerY()` from `eligibleCall.bounds`
-- No View ID available for individual call items, relies on text-based node search and coordinate extraction
+**WaitingForConfirmHandler (확인 다이얼로그):**
+- Primary: `com.kakao.taxi.driver:id/btn_positive` (View ID)
+- Fallback: Text search ("수락하기", "확인", "수락")
+- Click Method: **performAction** with node refresh and FOCUS retry
+- Throttle Avoidance: Skips if `btn_call_accept` detected (waits for dialog)
+
+**ClickingItemHandler (콜 아이템 클릭):**
+- Method: Coordinate-based `dispatchGesture` using `eligibleCall.bounds`
+- No View ID available for list items
+- Uses `bounds.centerX/centerY()` from parsed call data
 
 ## Tech Stack
 

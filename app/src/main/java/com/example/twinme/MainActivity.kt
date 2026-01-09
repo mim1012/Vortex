@@ -87,6 +87,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvRefreshDelayValue: TextView
     private lateinit var seekbarRefreshDelay: SeekBar
     private lateinit var switchClickEffect: SwitchCompat
+    private lateinit var switchHourlyReservation: SwitchCompat
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -190,6 +191,7 @@ class MainActivity : AppCompatActivity() {
         fabAddKeyword.isEnabled = false
         seekbarRefreshDelay.isEnabled = false
         switchClickEffect.isEnabled = false
+        switchHourlyReservation.isEnabled = false
         radioGroupCondition.isEnabled = false
         radioCondition12.isEnabled = false
         radioCondition3.isEnabled = false
@@ -202,6 +204,7 @@ class MainActivity : AppCompatActivity() {
         fabAddKeyword.isEnabled = true
         seekbarRefreshDelay.isEnabled = true
         switchClickEffect.isEnabled = true
+        switchHourlyReservation.isEnabled = true
         radioGroupCondition.isEnabled = true
         radioCondition12.isEnabled = true
         radioCondition3.isEnabled = true
@@ -297,6 +300,7 @@ class MainActivity : AppCompatActivity() {
         tvRefreshDelayValue = findViewById(R.id.tv_refresh_delay_value)
         seekbarRefreshDelay = findViewById(R.id.seekbar_refresh_delay)
         switchClickEffect = findViewById(R.id.switch_click_effect)
+        switchHourlyReservation = findViewById(R.id.switch_hourly_reservation)
     }
 
     private fun loadSettings() {
@@ -332,6 +336,9 @@ class MainActivity : AppCompatActivity() {
 
         // 클릭 효과
         switchClickEffect.isChecked = settingsManager.isClickEffectEnabled
+
+        // 1시간 예약 허용
+        switchHourlyReservation.isChecked = settingsManager.allowHourlyReservation
     }
 
     private fun setupListeners() {
@@ -422,6 +429,11 @@ class MainActivity : AppCompatActivity() {
         // 클릭 효과
         switchClickEffect.setOnCheckedChangeListener { _, isChecked ->
             settingsManager.isClickEffectEnabled = isChecked
+        }
+
+        // 1시간 예약 허용
+        switchHourlyReservation.setOnCheckedChangeListener { _, isChecked ->
+            settingsManager.allowHourlyReservation = isChecked
         }
     }
 

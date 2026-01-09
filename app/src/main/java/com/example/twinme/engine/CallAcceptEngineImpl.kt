@@ -522,31 +522,36 @@ class CallAcceptEngineImpl @Inject constructor(
 
     /**
      * 상태별 지연 시간 반환
-     * ⭐ 즉시 처리 모드: 모든 딜레이 최소화 (1ms)
+     * ⭐ 원본 APK (MacroEngine.java) 값 적용
      *
-     * 원본 APK 값 (참고용):
-     * | 상태 | 원본 | 즉시모드 |
-     * |------|------|---------|
-     * | WAITING_FOR_CALL | 10ms | 1ms |
-     * | LIST_DETECTED | 10ms | 1ms |
-     * | ANALYZING | 50ms | 1ms |
-     * | DETECTED_CALL | 50ms | 1ms |
-     * | CLICKING_ITEM | 10ms | 1ms |
-     * | WAITING_FOR_CONFIRM | 10ms | 1ms |
+     * 원본 APK executeStateMachineOnce() 반환값:
+     * | 상태 | 원본 딜레이 |
+     * |------|------------|
+     * | IDLE | 200ms |
+     * | LIST_DETECTED | 50ms |
+     * | REFRESHING | 50ms |
+     * | ANALYZING | 30ms |
+     * | CLICKING_ITEM | 10ms |
+     * | WAITING_FOR_ACCEPT/DETECTED_CALL | 10ms |
+     * | ACCEPTING_CALL | 10ms |
+     * | WAITING_FOR_CONFIRM | 10ms |
+     * | SUCCESS/CALL_ACCEPTED | 500ms |
+     * | FAILED_ASSIGNED | 100ms |
+     * | TIMEOUT_RECOVERY | 500ms |
      */
     private fun getDelayForState(state: CallAcceptState): Long {
         return when (state) {
-            CallAcceptState.IDLE -> Long.MAX_VALUE
-            CallAcceptState.WAITING_FOR_CALL -> 1L           // ⭐ 즉시
-            CallAcceptState.LIST_DETECTED -> 1L              // ⭐ 즉시
-            CallAcceptState.REFRESHING -> 1L                 // ⭐ 즉시
-            CallAcceptState.ANALYZING -> 1L                  // ⭐ 즉시
-            CallAcceptState.CLICKING_ITEM -> 1L              // ⭐ 즉시
-            CallAcceptState.DETECTED_CALL -> 1L              // ⭐ 즉시
-            CallAcceptState.WAITING_FOR_CONFIRM -> 1L        // ⭐ 즉시
-            CallAcceptState.CALL_ACCEPTED -> 100L            // 완료 후 짧은 대기
-            CallAcceptState.TIMEOUT_RECOVERY -> 50L          // 복구
-            CallAcceptState.ERROR_ASSIGNED,
+            CallAcceptState.IDLE -> 200L                     // 원본: 200ms
+            CallAcceptState.WAITING_FOR_CALL -> 200L         // 원본: IDLE과 동일
+            CallAcceptState.LIST_DETECTED -> 50L             // 원본: 50ms
+            CallAcceptState.REFRESHING -> 50L                // 원본: 50ms
+            CallAcceptState.ANALYZING -> 30L                 // 원본: 30ms
+            CallAcceptState.CLICKING_ITEM -> 10L             // 원본: 10ms
+            CallAcceptState.DETECTED_CALL -> 10L             // 원본: 10ms (WAITING_FOR_ACCEPT)
+            CallAcceptState.WAITING_FOR_CONFIRM -> 10L       // 원본: 10ms
+            CallAcceptState.CALL_ACCEPTED -> 500L            // 원본: 500ms (SUCCESS)
+            CallAcceptState.TIMEOUT_RECOVERY -> 500L         // 원본: 500ms
+            CallAcceptState.ERROR_ASSIGNED -> 100L           // 원본: 100ms (FAILED_ASSIGNED)
             CallAcceptState.ERROR_TIMEOUT,
             CallAcceptState.ERROR_UNKNOWN -> 100L
         }

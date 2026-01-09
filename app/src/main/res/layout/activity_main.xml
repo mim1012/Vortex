@@ -393,6 +393,29 @@
                         android:layout_weight="1" />
                 </RadioGroup>
 
+                <LinearLayout
+                    android:id="@+id/ll_hourly_reservation"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp">
+
+                    <TextView
+                        android:textSize="14sp"
+                        android:textColor="#FF000000"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:text="🕐 1시간 예약 허용"
+                        android:layout_weight="1" />
+
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/switch_hourly_reservation"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:checked="false" />
+                </LinearLayout>
+
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
