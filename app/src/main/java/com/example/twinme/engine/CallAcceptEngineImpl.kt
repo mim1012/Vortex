@@ -414,23 +414,41 @@ class CallAcceptEngineImpl @Inject constructor(
         // ⭐ StateContext는 필드로 유지되므로 eligibleCall 값이 보존됨
         // rootNode는 cachedRootNode로 람다에서 자동으로 참조됨
 
-        // 핸들러 실행
-        when (val result = currentHandler.handle(rootNode, stateContext)) {
-            is StateResult.Transition -> {
-                changeState(result.nextState, result.reason)
+        // 핸들러 실행 (try-catch로 크래시 방지)
+        try {
+            when (val result = currentHandler.handle(rootNode, stateContext)) {
+                is StateResult.Transition -> {
+                    changeState(result.nextState, result.reason)
+                }
+                is StateResult.Error -> {
+                    changeState(result.errorState, result.reason)
+                }
+                is StateResult.PauseAndTransition -> {
+                    // ⭐ 원본 APK SUCCESS 상태 처리: pause() + IDLE 전환
+                    Log.i(TAG, "PauseAndTransition: ${result.reason}")
+                    pause()  // 엔진 일시정지
+                    changeState(result.nextState, result.reason)
+                }
+                StateResult.NoChange -> {
+                    // 상태 유지
+                }
             }
-            is StateResult.Error -> {
-                changeState(result.errorState, result.reason)
-            }
-            is StateResult.PauseAndTransition -> {
-                // ⭐ 원본 APK SUCCESS 상태 처리: pause() + IDLE 전환
-                Log.i(TAG, "PauseAndTransition: ${result.reason}")
-                pause()  // 엔진 일시정지
-                changeState(result.nextState, result.reason)
-            }
-            StateResult.NoChange -> {
-                // 상태 유지
-            }
+        } catch (e: IllegalStateException) {
+            // AccessibilityNodeInfo already recycled
+            Log.e(TAG, "핸들러 실행 중 IllegalStateException: ${e.message}")
+            cachedRootNode = null  // 캐시 무효화
+            return 200L
+        } catch (e: SecurityException) {
+            // Shizuku 권한 오류
+            Log.e(TAG, "핸들러 실행 중 SecurityException (Shizuku 권한): ${e.message}")
+            changeState(CallAcceptState.ERROR_UNKNOWN, "Shizuku 권한 오류")
+            return 500L
+        } catch (e: Exception) {
+            // 기타 예외
+            Log.e(TAG, "핸들러 실행 중 예외 발생: ${e.javaClass.simpleName} - ${e.message}")
+            e.printStackTrace()
+            changeState(CallAcceptState.ERROR_UNKNOWN, "핸들러 예외: ${e.javaClass.simpleName}")
+            return 500L
         }
 
         // 상태별 지연 시간 반환 (원본 라인 1313-1780의 반환값)
