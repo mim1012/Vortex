@@ -436,17 +436,32 @@ class CallAcceptEngineImpl @Inject constructor(
         } catch (e: IllegalStateException) {
             // AccessibilityNodeInfo already recycled
             Log.e(TAG, "핸들러 실행 중 IllegalStateException: ${e.message}")
+            com.example.twinme.logging.RemoteLogger.logError(
+                errorType = "IllegalStateException",
+                message = "Handler execution failed: ${_currentState.value.name} - ${e.message}",
+                stackTrace = e.stackTraceToString()
+            )
             cachedRootNode = null  // 캐시 무효화
             return 200L
         } catch (e: SecurityException) {
             // Shizuku 권한 오류
             Log.e(TAG, "핸들러 실행 중 SecurityException (Shizuku 권한): ${e.message}")
+            com.example.twinme.logging.RemoteLogger.logError(
+                errorType = "SecurityException",
+                message = "Shizuku permission error: ${_currentState.value.name} - ${e.message}",
+                stackTrace = e.stackTraceToString()
+            )
             changeState(CallAcceptState.ERROR_UNKNOWN, "Shizuku 권한 오류")
             return 500L
         } catch (e: Exception) {
             // 기타 예외
             Log.e(TAG, "핸들러 실행 중 예외 발생: ${e.javaClass.simpleName} - ${e.message}")
             e.printStackTrace()
+            com.example.twinme.logging.RemoteLogger.logError(
+                errorType = e.javaClass.simpleName,
+                message = "Handler exception in ${_currentState.value.name}: ${e.message}",
+                stackTrace = e.stackTraceToString()
+            )
             changeState(CallAcceptState.ERROR_UNKNOWN, "핸들러 예외: ${e.javaClass.simpleName}")
             return 500L
         }
