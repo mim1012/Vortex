@@ -271,7 +271,18 @@ class CallAcceptAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this  // Singleton instance 설정
-        Log.d(TAG, "서비스 연결됨")
+
+        val timestamp = System.currentTimeMillis()
+        Log.d(TAG, "========================================")
+        Log.d(TAG, "접근성 서비스 연결됨 (시각: $timestamp)")
+        Log.d(TAG, "========================================")
+
+        // 생명주기 이벤트 로깅 (문자열로 전송)
+        com.example.twinme.logging.RemoteLogger.logConfigChange(
+            configType = "LIFECYCLE",
+            beforeValue = "SYSTEM",
+            afterValue = "ACCESSIBILITY_SERVICE_CONNECTED"
+        )
 
         // 인증 상태 확인
         val authManager = AuthManager.getInstance(applicationContext)
@@ -289,11 +300,23 @@ class CallAcceptAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // 인증 상태 재확인 (캐시 만료 대비)
+        // ⭐⭐⭐ v1.4 방식 복원: 이벤트마다 executeImmediate() 즉시 실행
+        // 화면 변경 시 실시간 반응으로 안정성 향상
+
+        // 인증 상태 재확인 (캐시 만료 시 엔진 정지)
         val authManager = AuthManager.getInstance(applicationContext)
         if (!authManager.isAuthorized || !authManager.isCacheValid()) {
-            Log.w(TAG, "인증 캐시 만료 - 서비스 비활성화")
-            disableSelf()
+            // ⭐ 서비스 비활성화 대신 엔진만 정지
+            if (engine.isRunning.value) {
+                Log.e(TAG, "❌ 인증 만료 - 자동화 중단 (재인증 필요)")
+                engine.stop()
+                // 알림 또는 토스트로 사용자에게 알림 (옵션)
+                android.widget.Toast.makeText(
+                    applicationContext,
+                    "인증 만료: 재인증이 필요합니다",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
             return
         }
 
@@ -303,14 +326,14 @@ class CallAcceptAccessibilityService : AccessibilityService() {
             return
         }
 
-        // ⭐⭐⭐ 즉시 처리 모드: 이벤트 발생 시 상태 머신 바로 실행
-        // 딜레이 없이 즉각 처리 (테스트용 최적화)
+        // ⭐⭐⭐ v1.4 방식 복원: 화면 변경 이벤트 시 즉시 실행
         if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED ||
             event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
 
-            rootInActiveWindow?.let { rootNode ->
-                // ⭐ 즉시 실행: 루프 대기 없이 바로 상태 머신 실행
-                engine.executeImmediate(rootNode)
+            val rootNode = rootInActiveWindow
+            if (rootNode != null) {
+                Log.d(TAG, "✅ [v1.4 복원] executeImmediate() 호출 - 이벤트: ${event.eventType}")
+                engine.executeImmediate(rootNode)  // ✅ v1.4 방식 복원!
             }
         }
     }
@@ -769,15 +792,62 @@ class CallAcceptAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() {
-        Log.d(TAG, "서비스 중단")
+        val timestamp = System.currentTimeMillis()
+        Log.w(TAG, "========================================")
+        Log.w(TAG, "접근성 서비스 중단됨 (시각: $timestamp)")
+        Log.w(TAG, "========================================")
+
+        // 생명주기 이벤트 로깅
+        com.example.twinme.logging.RemoteLogger.logError(
+            errorType = "ACCESSIBILITY_SERVICE_INTERRUPTED",
+            message = "onInterrupt 호출 - 시스템에 의한 서비스 중단",
+            stackTrace = "timestamp: $timestamp"
+        )
     }
 
     override fun onDestroy() {
+        val timestamp = System.currentTimeMillis()
+        Log.w(TAG, "========================================")
+        Log.w(TAG, "접근성 서비스 파괴됨 (시각: $timestamp)")
+        Log.w(TAG, "========================================")
+
+        // 1. 마지막 상태를 SharedPreferences에 기록 (동기식 - 무조건 성공)
+        com.example.twinme.logging.RemoteLogger.recordLastState(
+            event = "ACCESSIBILITY_SERVICE_DESTROYED",
+            details = """
+                timestamp: $timestamp
+                Shizuku 상태: ${if (com.example.twinme.utils.ShizukuLifecycleTracker.isShizukuDead()) "죽음" else "살아있음"}
+                Shizuku 종료 후 경과: ${com.example.twinme.utils.ShizukuLifecycleTracker.getTimeSinceShizukuDeath()}ms
+                인스턴스: ${if (instance != null) "살아있음" else "null"}
+            """.trimIndent()
+        )
+
+        // 2. 동기식 에러 로깅 (프로세스 종료 전 완료 보장)
+        try {
+            com.example.twinme.logging.RemoteLogger.logErrorSync(
+                errorType = "ACCESSIBILITY_SERVICE_DESTROYED",
+                message = "onDestroy 호출 - 서비스 완전 종료",
+                stackTrace = """
+                    timestamp: $timestamp
+                    Shizuku 상태: ${if (com.example.twinme.utils.ShizukuLifecycleTracker.isShizukuDead()) "죽음" else "살아있음"}
+                    Shizuku 종료 후 경과: ${com.example.twinme.utils.ShizukuLifecycleTracker.getTimeSinceShizukuDeath()}ms
+                    인스턴스: ${if (instance != null) "살아있음" else "null"}
+                """.trimIndent()
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "동기식 로깅 실패: ${e.message}")
+        }
+
+        // ⭐ 엔진 정지 및 리소스 정리
+        engine.stop()
+        engine.cleanup()  // 추가: 엔진 내부 리소스 정리
+
         super.onDestroy()
         instance = null  // Singleton instance 해제
         threadPool.shutdown()  // ThreadPool 정리
+        mainHandler.removeCallbacksAndMessages(null)  // ⭐ 추가: 모든 pending runnable 제거
         removeTouchIndicator()  // 오버레이 제거
-        Log.d(TAG, "서비스 종료")
+        Log.d(TAG, "서비스 종료 완료 - 모든 리소스 정리됨")
     }
 
     /**

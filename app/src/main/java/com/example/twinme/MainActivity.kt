@@ -185,29 +185,47 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun disableAllInteractions() {
+        // ⭐ 인증 만료 시 모든 UI 비활성화
         switchFloatingUi.isEnabled = false
         fabAddTimeRange.isEnabled = false
         btnEditMinAmount.isEnabled = false
         fabAddKeyword.isEnabled = false
+        btnEditKeywordAmount.isEnabled = false
+        btnEditAirportAmount.isEnabled = false
         seekbarRefreshDelay.isEnabled = false
         switchClickEffect.isEnabled = false
         switchHourlyReservation.isEnabled = false
         radioGroupCondition.isEnabled = false
         radioCondition12.isEnabled = false
         radioCondition3.isEnabled = false
+
+        // 시간 범위 카드들도 비활성화
+        llTimeRangeCards.isEnabled = false
+
+        // 전체 화면 알파 조정 (시각적 표시)
+        window.decorView.alpha = 0.5f
     }
 
     private fun enableAllInteractions() {
+        // ⭐ 인증 성공 시 모든 UI 활성화
         switchFloatingUi.isEnabled = true
         fabAddTimeRange.isEnabled = true
         btnEditMinAmount.isEnabled = true
         fabAddKeyword.isEnabled = true
+        btnEditKeywordAmount.isEnabled = true
+        btnEditAirportAmount.isEnabled = true
         seekbarRefreshDelay.isEnabled = true
         switchClickEffect.isEnabled = true
         switchHourlyReservation.isEnabled = true
         radioGroupCondition.isEnabled = true
         radioCondition12.isEnabled = true
         radioCondition3.isEnabled = true
+
+        // 시간 범위 카드들도 활성화
+        llTimeRangeCards.isEnabled = true
+
+        // 전체 화면 알파 복원
+        window.decorView.alpha = 1.0f
     }
 
     private fun showAuthFailedContent(error: String) {
@@ -346,7 +364,20 @@ class MainActivity : AppCompatActivity() {
         radioGroupCondition.setOnCheckedChangeListener { _, checkedId ->
             val newMode = when (checkedId) {
                 R.id.radio_condition_1_2 -> com.example.twinme.domain.interfaces.ConditionMode.CONDITION_1_2
-                R.id.radio_condition_3 -> com.example.twinme.domain.interfaces.ConditionMode.CONDITION_3
+                R.id.radio_condition_3 -> {
+                    // ⭐ 조건 3 선택 시 airportMinAmount 검증
+                    if (settingsManager.airportMinAmount <= 0) {
+                        Toast.makeText(
+                            this,
+                            "조건 3 사용 전에 '인천공항 출발 최소 금액'을 설정해주세요.\n(아래 '조건3 인천공항' 카드에서 설정)",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        // 이전 선택으로 되돌리기
+                        radioCondition12.isChecked = true
+                        return@setOnCheckedChangeListener
+                    }
+                    com.example.twinme.domain.interfaces.ConditionMode.CONDITION_3
+                }
                 else -> com.example.twinme.domain.interfaces.ConditionMode.CONDITION_1_2
             }
             settingsManager.conditionMode = newMode
@@ -357,10 +388,17 @@ class MainActivity : AppCompatActivity() {
         switchFloatingUi.setOnCheckedChangeListener { _, isChecked ->
             settingsManager.isFloatingUiEnabled = isChecked
             if (isChecked) {
-                // 인증 상태 체크
-                if (!isAuthenticated) {
+                // ⭐ 인증 상태 체크 (캐시 만료 포함)
+                if (!isAuthenticated || !authManager.isAuthorized || !authManager.isCacheValid()) {
                     switchFloatingUi.isChecked = false
-                    Toast.makeText(this, "인증이 필요합니다. 앱을 재시작해주세요.", Toast.LENGTH_LONG).show()
+                    AlertDialog.Builder(this)
+                        .setTitle("인증 만료")
+                        .setMessage("인증이 만료되었습니다.\n앱을 재시작하여 재인증해주세요.")
+                        .setCancelable(false)
+                        .setPositiveButton("앱 종료") { _, _ ->
+                            finish()
+                        }
+                        .show()
                     return@setOnCheckedChangeListener
                 }
 
@@ -765,6 +803,31 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+
+        // ⭐ 인증 상태 재확인 (캐시 만료 체크)
+        if (!authManager.isAuthorized || !authManager.isCacheValid()) {
+            // 인증 만료 시 UI 잠금
+            isAuthenticated = false
+            disableAllInteractions()
+
+            // 서비스 중지
+            if (switchFloatingUi.isChecked) {
+                switchFloatingUi.isChecked = false
+                stopFloatingService()
+            }
+
+            // 사용자에게 알림
+            AlertDialog.Builder(this)
+                .setTitle("인증 만료")
+                .setMessage("인증이 만료되었습니다.\n앱을 재시작하여 재인증해주세요.")
+                .setCancelable(false)
+                .setPositiveButton("앱 종료") { _, _ ->
+                    finish()
+                }
+                .show()
+            return
+        }
+
         // 권한 상태 갱신 (접근성 설정 화면에서 돌아왔을 때만 체크)
         // 서비스가 활성화되어 있으면 스위치 상태를 업데이트
         val isServiceEnabled = isAccessibilityServiceEnabled()

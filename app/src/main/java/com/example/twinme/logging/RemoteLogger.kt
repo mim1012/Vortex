@@ -37,6 +37,12 @@ object RemoteLogger {
     private const val LOG_ENDPOINT = "/api/twinme/logs"
     private const val MAX_BUFFER_SIZE = 100
 
+    // SharedPreferences for last state tracking
+    private const val PREF_NAME = "last_state"
+    private const val KEY_LAST_EVENT = "last_event"
+    private const val KEY_LAST_TIMESTAMP = "last_timestamp"
+    private const val KEY_LAST_DETAILS = "details"
+
     private val executor = Executors.newSingleThreadExecutor()
     private val gson = Gson()
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
@@ -463,6 +469,128 @@ object RemoteLogger {
     }
 
     /**
+     * 동기식 에러 로깅 (프로세스 종료 직전에 사용)
+     * 비동기가 아닌 동기식으로 즉시 전송하여 프로세스 종료 전에 완료 보장
+     */
+    fun logErrorSync(errorType: String, message: String, stackTrace: String?) {
+        if (!isEnabled) return
+
+        val logData = createLogDataSync(
+            eventType = EventType.ERROR,
+            detail = mapOf(
+                "error_type" to errorType,
+                "message" to message,
+                "stack_trace" to (stackTrace ?: "")
+            )
+        )
+
+        sendLogSynchronously(logData)
+    }
+
+    /**
+     * 마지막 상태를 SharedPreferences에 기록 (동기식)
+     * 프로세스가 갑자기 종료되어도 다음 시작 시 복구 가능
+     */
+    fun recordLastState(event: String, details: String) {
+        try {
+            val prefs = context?.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE) ?: return
+            prefs.edit()
+                .putString(KEY_LAST_EVENT, event)
+                .putString(KEY_LAST_TIMESTAMP, System.currentTimeMillis().toString())
+                .putString(KEY_LAST_DETAILS, details)
+                .commit()  // apply() 아님 - 즉시 디스크에 저장
+            Log.d(TAG, "마지막 상태 기록: $event")
+        } catch (e: Exception) {
+            Log.e(TAG, "상태 저장 실패", e)
+        }
+    }
+
+    /**
+     * 앱 시작 시 이전 세션의 마지막 상태 전송
+     * 이전 세션이 비정상 종료된 경우 원인 추적에 유용
+     */
+    fun sendPendingStateOnStartup() {
+        try {
+            val prefs = context?.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE) ?: return
+            val lastEvent = prefs.getString(KEY_LAST_EVENT, null) ?: return
+            val lastTimestamp = prefs.getString(KEY_LAST_TIMESTAMP, null) ?: return
+            val details = prefs.getString(KEY_LAST_DETAILS, "") ?: ""
+
+            Log.d(TAG, "이전 세션 마지막 상태 발견: $lastEvent")
+
+            // 이전 세션의 마지막 상태 전송
+            logError(
+                errorType = "RECOVERED_LAST_STATE",
+                message = "이전 세션 마지막 상태: $lastEvent (timestamp: $lastTimestamp)",
+                stackTrace = details
+            )
+
+            // 전송 후 삭제
+            prefs.edit().clear().apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "이전 상태 전송 실패", e)
+        }
+    }
+
+    /**
+     * 동기식으로 로그 전송 (프로세스 종료 직전 사용)
+     */
+    private fun sendLogSynchronously(logData: Map<String, Any>) {
+        try {
+            val json = gson.toJson(logData)
+            Log.d(TAG, "동기식 로그 전송: $json")
+
+            val body = json.toRequestBody("application/json".toMediaType())
+            val request = Request.Builder()
+                .url("$BASE_URL$LOG_ENDPOINT")
+                .post(body)
+                .build()
+
+            // execute()는 동기식 - 응답을 기다림
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    Log.d(TAG, "동기식 로그 전송 성공")
+                } else {
+                    Log.w(TAG, "동기식 로그 전송 실패: ${response.code}")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "동기식 전송 오류: ${e.message}")
+        }
+    }
+
+    /**
+     * 동기식 로그 데이터 생성 (sendLogSynchronously용)
+     */
+    private fun createLogDataSync(eventType: EventType, detail: Map<String, Any>): Map<String, Any> {
+        val ctx = context ?: return emptyMap()
+
+        try {
+            val authManager = AuthManager.getInstance(ctx)
+            val phoneNumber = authManager.getPhoneNumber() ?: ""
+            val deviceId = authManager.getDeviceId()
+
+            val detailWithTimestamp = detail.toMutableMap()
+            detailWithTimestamp["event_timestamp"] = dateFormat.format(Date())
+
+            return mutableMapOf(
+                "app_name" to "Vortex",
+                "app_version" to getAppVersion(ctx),
+                "phone_number" to maskIdentifier(phoneNumber),
+                "device_id" to deviceId,
+                "device_model" to "${Build.MANUFACTURER} ${Build.MODEL}",
+                "android_version" to Build.VERSION.SDK_INT.toString(),
+                "event_type" to eventType.name,
+                "event_detail" to detailWithTimestamp,
+                "context_info" to emptyMap<String, Any>()
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "로그 데이터 생성 실패", e)
+            return emptyMap()
+        }
+    }
+
+    /**
      * 코루틴 스코프 취소 (메모리 누수 방지)
      */
     fun shutdown() {
@@ -604,6 +732,8 @@ object RemoteLogger {
         return mapOf(
             "condition_mode" to settings.conditionMode.name,
             "min_amount" to settings.minAmount,
+            "keyword_min_amount" to settings.keywordMinAmount,  // ⭐ 추가
+            "airport_min_amount" to settings.airportMinAmount,  // ⭐ 추가
             "keywords_count" to settings.keywords.size,
             "time_ranges_count" to settings.timeRanges.size,
             "refresh_delay" to settings.refreshDelay,

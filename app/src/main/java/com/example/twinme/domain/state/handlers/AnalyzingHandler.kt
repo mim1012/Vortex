@@ -47,75 +47,102 @@ class AnalyzingHandler : StateHandler {
     override val targetState: CallAcceptState = CallAcceptState.ANALYZING
 
     override fun handle(node: AccessibilityNodeInfo, context: StateContext): StateResult {
-        // 설정 유효성 검사
-        if (!context.filterSettings.validateSettings()) {
-            Log.w(TAG, "설정값이 유효하지 않음")
-            return StateResult.Error(
-                CallAcceptState.ERROR_UNKNOWN,
-                "설정값 유효하지 않음"
-            )
-        }
-
-        // 1. 콜 리스트 파싱
-        val callsWithText = parseReservationCalls(node, context)
-        val calls = callsWithText.map { it.first }
-
-        if (calls.isEmpty()) {
-            return StateResult.Transition(
-                CallAcceptState.WAITING_FOR_CALL,
-                "콜 리스트가 비어있음"
-            )
-        }
-
-        // 2. 각 콜의 조건 충족 여부 - RemoteLogger로 전송
-        callsWithText.forEachIndexed { index, (call, collectedText) ->
-            val eligible = call.isEligible(context.filterSettings, context.timeSettings)
-            val rejectReason = if (!eligible) getRejectReason(call, context) else null
-            val confidenceStr = call.confidence?.name ?: "UNKNOWN"
-
-            // RemoteLogger로 전송 (Logcat 제거)
-            context.logger.logCallParsed(
-                index = index,
-                source = call.source,
-                destination = call.destination,
-                price = call.price,
-                callType = call.callType,
-                reservationTime = call.reservationTime,
-                eligible = eligible,
-                rejectReason = rejectReason,
-                confidence = confidenceStr,
-                debugInfo = call.debugInfo,
-                callKey = call.callKey,
-                collectedText = collectedText
-            )
-        }
-
-        // 서버로 즉시 전송
-        context.logger.flushLogsAsync()
-
-        // 3. 금액 기준 내림차순 정렬 후 조건에 맞는 콜 찾기
-        val sortedCalls = calls.sortedByDescending { it.price }
-
-        for (call in sortedCalls) {
-            if (call.isEligible(context.filterSettings, context.timeSettings)) {
-                // 콜 발견 Toast
-                context.applicationContext?.let { ctx ->
-                    NotificationHelper.showToast(ctx, "${call.reservationTime} ${call.price}원 콜 발견")
-                }
-
-                context.eligibleCall = call
-
-                return StateResult.Transition(
-                    CallAcceptState.CLICKING_ITEM,
-                    "조건 충족 콜 (${call.price}원)"
+        return try {
+            // 설정 유효성 검사
+            if (!context.filterSettings.validateSettings()) {
+                Log.w(TAG, "설정값이 유효하지 않음")
+                return StateResult.Error(
+                    CallAcceptState.ERROR_UNKNOWN,
+                    "설정값 유효하지 않음"
                 )
             }
-        }
 
-        return StateResult.Transition(
-            CallAcceptState.WAITING_FOR_CALL,
-            "조건 충족 콜 없음"
-        )
+            // 1. 콜 리스트 파싱
+            val callsWithText = parseReservationCalls(node, context)
+            val calls = callsWithText.map { it.first }
+
+            if (calls.isEmpty()) {
+                context.eligibleCall = null  // ⭐⭐⭐ v1.4 복원: 오래된 콜 정보 제거
+                return StateResult.Transition(
+                    CallAcceptState.WAITING_FOR_CALL,
+                    "콜 리스트가 비어있음"
+                )
+            }
+
+            // 2. 각 콜의 조건 충족 여부 - RemoteLogger로 전송
+            callsWithText.forEachIndexed { index, (call, collectedText) ->
+                val eligible = call.isEligible(context.filterSettings, context.timeSettings)
+                val rejectReason = if (!eligible) getRejectReason(call, context) else null
+                val confidenceStr = call.confidence?.name ?: "UNKNOWN"
+
+                // RemoteLogger로 전송 (Logcat 제거)
+                context.logger.logCallParsed(
+                    index = index,
+                    source = call.source,
+                    destination = call.destination,
+                    price = call.price,
+                    callType = call.callType,
+                    reservationTime = call.reservationTime,
+                    eligible = eligible,
+                    rejectReason = rejectReason,
+                    confidence = confidenceStr,
+                    debugInfo = call.debugInfo,
+                    callKey = call.callKey,
+                    collectedText = collectedText
+                )
+            }
+
+            // 서버로 즉시 전송
+            context.logger.flushLogsAsync()
+
+            // 3. 금액 기준 내림차순 정렬 후 조건에 맞는 콜 찾기
+            val sortedCalls = calls.sortedByDescending { it.price }
+
+            for (call in sortedCalls) {
+                if (call.isEligible(context.filterSettings, context.timeSettings)) {
+                    // 콜 발견 Toast
+                    context.applicationContext?.let { ctx ->
+                        NotificationHelper.showToast(ctx, "${call.reservationTime} ${call.price}원 콜 발견")
+                    }
+
+                    context.eligibleCall = call
+
+                    return StateResult.Transition(
+                        CallAcceptState.CLICKING_ITEM,
+                        "조건 충족 콜 (${call.price}원)"
+                    )
+                }
+            }
+
+            context.eligibleCall = null  // ⭐⭐⭐ v1.4 복원: 조건 불충족 시 오래된 콜 정보 제거
+            StateResult.Transition(
+                CallAcceptState.WAITING_FOR_CALL,
+                "조건 충족 콜 없음"
+            )
+
+        } catch (e: NullPointerException) {
+            Log.e(TAG, "NPE 발생 - UI 구조 변경 가능성", e)
+            context.logger.logError(
+                type = "AnalyzingHandler_NPE",
+                message = "파싱 실패: null 참조 - ${e.message}",
+                stackTrace = e.stackTraceToString()
+            )
+            StateResult.Error(
+                CallAcceptState.ERROR_UNKNOWN,
+                "파싱 실패: null 참조 (${e.message})"
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "AnalyzingHandler 예외 발생", e)
+            context.logger.logError(
+                type = "AnalyzingHandler_${e.javaClass.simpleName}",
+                message = "파싱 중 예외 발생: ${e.message}",
+                stackTrace = e.stackTraceToString()
+            )
+            StateResult.Error(
+                CallAcceptState.ERROR_UNKNOWN,
+                "파싱 중 예외: ${e.javaClass.simpleName}"
+            )
+        }
     }
 
     /**

@@ -61,6 +61,7 @@ class ClickingItemHandler : StateHandler {
         // "이미 배차" 감지
         if (node.findAccessibilityNodeInfosByText("이미 배차").isNotEmpty()) {
             retryCount = 0
+            context.eligibleCall = null  // ⭐⭐⭐ v1.4 복원: 오래된 콜 정보 제거
             return StateResult.Error(CallAcceptState.ERROR_ASSIGNED, "이미 배차됨")
         }
 
@@ -121,6 +122,7 @@ class ClickingItemHandler : StateHandler {
             if (retryCount >= MAX_RETRY) {
                 Log.w(TAG, "콜 클릭 실패 - 최대 재시도 초과")
                 retryCount = 0
+                context.eligibleCall = null  // ⭐⭐⭐ v1.4 복원: 오래된 콜 정보 제거
                 return StateResult.Error(CallAcceptState.ERROR_UNKNOWN, "콜 클릭 실패")
             }
             return StateResult.NoChange

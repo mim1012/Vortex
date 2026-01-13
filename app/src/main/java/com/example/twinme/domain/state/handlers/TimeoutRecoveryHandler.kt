@@ -10,14 +10,17 @@ import com.example.twinme.domain.state.StateResult
 import com.example.twinme.service.CallAcceptAccessibilityService
 
 /**
- * TIMEOUT_RECOVERY 상태 핸들러 (원본 APK 방식)
+ * TIMEOUT_RECOVERY 상태 핸들러 (원본 MacroEngine.java 라인 630-638 완전 재현)
  *
  * 타임아웃 발생 시 자동 복구를 수행합니다.
  *
- * 동작 (원본 APK 라인 630-638):
- * 1. "예약콜 리스트" 화면이 있으면 LIST_DETECTED로 복귀
- * 2. 없으면 뒤로가기 버튼 클릭 (GLOBAL_ACTION_BACK)
- * 3. WAITING_FOR_CALL로 재시작
+ * 원본 동작:
+ * 1. "예약콜 리스트" 화면이 있으면 → LIST_DETECTED로 전환
+ * 2. "예약콜 리스트" 화면이 없으면 → BACK 버튼 클릭 + 상태 유지 (NoChange)
+ * 3. 500ms 후 다시 handle() 실행 (TIMEOUT_RECOVERY 반복)
+ * 4. "예약콜 리스트"가 감지될 때까지 무한 반복
+ *
+ * 이를 통해 팝업, 상세화면 등 모든 장애물을 제거하고 리스트로 복귀
  */
 class TimeoutRecoveryHandler : StateHandler {
     companion object {
@@ -27,41 +30,29 @@ class TimeoutRecoveryHandler : StateHandler {
     override val targetState = CallAcceptState.TIMEOUT_RECOVERY
 
     override fun handle(node: AccessibilityNodeInfo, context: StateContext): StateResult {
-        Log.d(TAG, "타임아웃 복구 시도")
-
-        // 원본 APK 라인 630-638: 리스트 화면 감지
+        // 원본 MacroEngine.java 라인 631-637: "예약콜 리스트" 텍스트 체크
         val hasListScreen = node.findAccessibilityNodeInfosByText("예약콜 리스트")
             .isNotEmpty()
 
         return if (hasListScreen) {
-            Log.d(TAG, "리스트 화면 감지 → LIST_DETECTED로 복귀")
+            // ✅ "예약콜 리스트" 감지됨 → LIST_DETECTED로 전환
+            Log.d(TAG, "예약콜 리스트로 복귀 완료")
+            context.eligibleCall = null  // ⭐⭐⭐ v1.4 복원: 오래된 콜 정보 제거
             StateResult.Transition(
                 CallAcceptState.LIST_DETECTED,
-                "타임아웃 후 리스트 화면으로 복귀"
+                "예약콜 리스트로 복귀"
             )
         } else {
-            Log.d(TAG, "리스트 화면 없음 → 뒤로가기 클릭")
+            // ❌ "예약콜 리스트" 없음 → BACK 버튼 클릭 + 상태 유지
+            Log.d(TAG, "백 버튼 클릭 - 예약콜 리스트로 돌아가기")
 
             // 뒤로가기 버튼 클릭 (GLOBAL_ACTION_BACK)
-            // AccessibilityService 인스턴스 가져오기 (Singleton 패턴 사용)
             val service = CallAcceptAccessibilityService.instance
-            val backSuccess = service?.performGlobalAction(
-                AccessibilityService.GLOBAL_ACTION_BACK
-            ) ?: false
+            service?.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
 
-            if (backSuccess) {
-                Log.d(TAG, "뒤로가기 성공 → WAITING_FOR_CALL로 재시작")
-                StateResult.Transition(
-                    CallAcceptState.WAITING_FOR_CALL,
-                    "뒤로가기 후 재시작"
-                )
-            } else {
-                Log.e(TAG, "뒤로가기 실패")
-                StateResult.Error(
-                    CallAcceptState.ERROR_UNKNOWN,
-                    "뒤로가기 버튼 클릭 실패"
-                )
-            }
+            // ⭐ 원본처럼 상태 유지 (changeState 호출 안 함)
+            // 500ms 후 다시 handle()이 실행되어 "예약콜 리스트" 재확인
+            StateResult.NoChange
         }
     }
 }

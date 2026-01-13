@@ -26,4 +26,10 @@ interface ICallEngine {
 
     // 자동 새로고침 설정
     fun setAutoRefreshEnabled(enabled: Boolean)
+
+    /**
+     * ⭐ 리소스 정리: 서비스 종료 시 호출
+     * Handler, runnable, cachedNode 등 정리
+     */
+    fun cleanup()
 }

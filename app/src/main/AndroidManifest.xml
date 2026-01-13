@@ -8,9 +8,15 @@
     <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- ⭐ 배터리 최적화 제외 요청 권한 (서비스 생존성 향상) -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <!-- ⭐ Wake Lock (화면 꺼져도 서비스 유지) -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- ⭐⭐⭐ v1.4 복원: Shizuku API 권한 (CRITICAL) -->
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23"/>
 
     <application
-        android:name=".VortexApplication"
+        android:name=".TwinMeApplication"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -58,6 +64,27 @@
             android:exported="true"
             android:multiprocess="false"
             android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
+        <!-- ⭐⭐⭐ v1.4 복원: AndroidX Startup Provider (CRITICAL) -->
+        <provider
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            android:name="androidx.startup.InitializationProvider">
+            <meta-data
+                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+                android:value="androidx.startup"/>
+            <meta-data
+                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+                android:value="androidx.startup"/>
+            <meta-data
+                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+                android:value="androidx.startup"/>
+        </provider>
+
+        <!-- ⭐⭐⭐ v1.4 복원: Shizuku V3 지원 선언 (HIGH) -->
+        <meta-data
+            android:name="moe.shizuku.client.V3_SUPPORT"
+            android:value="true"/>
 
     </application>
 

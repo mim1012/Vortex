@@ -28,12 +28,28 @@ Thumbs.db
 
 # Logs
 *.log
+*_log.txt
+*_output.txt
+log_analysis_output.txt
+gradle_build_output.txt
+build_output.txt
 
 # Temporary files
 *.tmp
 *.bak
 *.swp
 *~
+nul
+contains
+
+# Build scripts (keep only essential ones)
+build_batch.bat
+build_hotfix.bat
+do_build.bat
+cleanup.bat
+delete_file.*
+check_samsung_settings.bat
+ProjectTwinMe_New_Projecttimeline.json
 
 # Images (optional - keep only essential ones)
 *.png

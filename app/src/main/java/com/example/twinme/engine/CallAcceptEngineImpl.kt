@@ -436,32 +436,54 @@ class CallAcceptEngineImpl @Inject constructor(
         } catch (e: IllegalStateException) {
             // AccessibilityNodeInfo already recycled
             Log.e(TAG, "핸들러 실행 중 IllegalStateException: ${e.message}")
-            com.example.twinme.logging.RemoteLogger.logError(
-                errorType = "IllegalStateException",
-                message = "Handler execution failed: ${_currentState.value.name} - ${e.message}",
-                stackTrace = e.stackTraceToString()
-            )
+
+            // ⭐ 안전한 로깅: RemoteLogger 예외로 인한 2차 크래시 방지
+            try {
+                com.example.twinme.logging.RemoteLogger.logError(
+                    errorType = "IllegalStateException",
+                    message = "Handler execution failed: ${_currentState.value.name} - ${e.message}",
+                    stackTrace = e.stackTraceToString()
+                )
+            } catch (logException: Exception) {
+                Log.e(TAG, "로깅 실패 (무시): ${logException.message}")
+            }
+
             cachedRootNode = null  // 캐시 무효화
             return 200L
         } catch (e: SecurityException) {
-            // Shizuku 권한 오류
+            // Shizuku 권한 오류 - 더 강한 복구 로직
             Log.e(TAG, "핸들러 실행 중 SecurityException (Shizuku 권한): ${e.message}")
-            com.example.twinme.logging.RemoteLogger.logError(
-                errorType = "SecurityException",
-                message = "Shizuku permission error: ${_currentState.value.name} - ${e.message}",
-                stackTrace = e.stackTraceToString()
-            )
-            changeState(CallAcceptState.ERROR_UNKNOWN, "Shizuku 권한 오류")
-            return 500L
+
+            // ⭐ 안전한 로깅
+            try {
+                com.example.twinme.logging.RemoteLogger.logError(
+                    errorType = "SecurityException",
+                    message = "Shizuku permission error in ${_currentState.value.name}: ${e.message}",
+                    stackTrace = e.stackTraceToString()
+                )
+            } catch (logException: Exception) {
+                Log.e(TAG, "로깅 실패 (무시): ${logException.message}")
+            }
+
+            // 명확한 에러 상태로 전환 + 충분한 딜레이
+            changeState(CallAcceptState.ERROR_UNKNOWN, "Shizuku 권한 오류 - 복구 필요")
+            return 1500L  // 500ms → 1500ms: 무한 재시도 방지
         } catch (e: Exception) {
             // 기타 예외
             Log.e(TAG, "핸들러 실행 중 예외 발생: ${e.javaClass.simpleName} - ${e.message}")
             e.printStackTrace()
-            com.example.twinme.logging.RemoteLogger.logError(
-                errorType = e.javaClass.simpleName,
-                message = "Handler exception in ${_currentState.value.name}: ${e.message}",
-                stackTrace = e.stackTraceToString()
-            )
+
+            // ⭐ 안전한 로깅
+            try {
+                com.example.twinme.logging.RemoteLogger.logError(
+                    errorType = e.javaClass.simpleName,
+                    message = "Handler exception in ${_currentState.value.name}: ${e.message}",
+                    stackTrace = e.stackTraceToString()
+                )
+            } catch (logException: Exception) {
+                Log.e(TAG, "로깅 실패 (무시): ${logException.message}")
+            }
+
             changeState(CallAcceptState.ERROR_UNKNOWN, "핸들러 예외: ${e.javaClass.simpleName}")
             return 500L
         }
@@ -728,6 +750,37 @@ class CallAcceptEngineImpl @Inject constructor(
     override fun setAutoRefreshEnabled(enabled: Boolean) {
         _isAutoRefreshEnabled.value = enabled
         Log.d(TAG, "자동 새로고침 ${if (enabled) "활성화" else "비활성화"}")
+    }
+
+    /**
+     * ⭐ 리소스 정리: 서비스 종료 시 호출
+     * 메모리 누수 방지를 위한 모든 리소스 정리
+     */
+    override fun cleanup() {
+        Log.d(TAG, "cleanup() 시작 - 모든 리소스 정리")
+
+        // 1. 모든 pending runnable 제거
+        handler.removeCallbacksAndMessages(null)
+        currentRunnable = null
+        timeoutRunnable = null
+
+        // 2. cachedRootNode recycle (Native 메모리 해제)
+        cachedRootNode?.let {
+            try {
+                it.recycle()
+                Log.d(TAG, "cachedRootNode recycled")
+            } catch (e: Exception) {
+                Log.w(TAG, "cachedRootNode recycle 실패: ${e.message}")
+            }
+        }
+        cachedRootNode = null
+
+        // 3. 상태 초기화
+        _currentState.value = CallAcceptState.IDLE
+        _isRunning.value = false
+        _isPaused.value = false
+
+        Log.d(TAG, "cleanup() 완료 - 모든 리소스 정리됨")
     }
 
     // ============================================
