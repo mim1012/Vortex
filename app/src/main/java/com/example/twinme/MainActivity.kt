@@ -805,8 +805,9 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
 
         // ⭐ 인증 상태 재확인 (캐시 만료 체크)
-        if (!authManager.isAuthorized || !authManager.isCacheValid()) {
-            // 인증 만료 시 UI 잠금
+        // 단, 이미 인증을 시도한 경우에만 체크 (처음 실행 시 제외)
+        if (isAuthenticated && (!authManager.isAuthorized || !authManager.isCacheValid())) {
+            // 진짜 인증 만료인 경우만 (이전에 인증 성공했었는데 이제 만료된 경우)
             isAuthenticated = false
             disableAllInteractions()
 

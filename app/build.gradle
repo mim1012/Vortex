@@ -11,11 +11,11 @@ android {
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.example.twinme"
+        applicationId "com.example.twinme.debug"
         minSdk 24
         targetSdk 34
-        versionCode 18
-        versionName "1.8"
+        versionCode 1
+        versionName "1.9-debug"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -26,6 +26,8 @@ android {
             storePassword 'vortex2024'
             keyAlias 'vortex'
             keyPassword 'vortex2024'
+            v1SigningEnabled true
+            v2SigningEnabled true
         }
     }
 

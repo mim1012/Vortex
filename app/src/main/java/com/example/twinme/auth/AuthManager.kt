@@ -35,7 +35,7 @@ class AuthManager private constructor(private val context: Context) {
         private const val KEY_LAST_AUTH_TIME = "last_auth_time"
         private const val KEY_IS_AUTHORIZED = "is_authorized"
 
-        private const val CACHE_DURATION_MS = 60 * 60 * 1000L // 1시간
+        private const val CACHE_DURATION_MS = 24 * 60 * 60 * 1000L // 24시간 캐시 (프로덕션)
         private const val BASE_URL = "https://mediaenhanced-v10-production-011.up.railway.app"
         private const val AUTH_ENDPOINT = "/api/twinme/auth"
 
