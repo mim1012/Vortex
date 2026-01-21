@@ -30,9 +30,11 @@ import com.google.android.material.chip.Chip
 import com.google.android.material.chip.ChipGroup
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import com.google.android.material.switchmaterial.SwitchMaterial
+import java.text.SimpleDateFormat
 import java.time.LocalDate
 import java.time.LocalTime
 import java.util.*
+import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
 
@@ -88,6 +90,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var seekbarRefreshDelay: SeekBar
     private lateinit var switchClickEffect: SwitchCompat
     private lateinit var switchHourlyReservation: SwitchCompat
+
+    // 라이선스 UI
+    private lateinit var tvRemainingDays: TextView
+    private lateinit var tvExpiresAt: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -182,6 +188,81 @@ class MainActivity : AppCompatActivity() {
         // 메인 화면 표시 (현재 단일 레이아웃 구조)
         window.decorView.alpha = 1.0f
         enableAllInteractions()
+        updateLicenseInfo()
+    }
+
+    private fun updateLicenseInfo() {
+        val expiresAt = authManager.expiresAt
+
+        if (expiresAt.isNotEmpty()) {
+            val remainingDays = calculateRemainingDays(expiresAt)
+            val formattedDate = formatExpiresDate(expiresAt)
+
+            tvRemainingDays.text = "${remainingDays}일"
+            tvExpiresAt.text = "만료일: $formattedDate"
+        } else {
+            tvRemainingDays.text = "--일"
+            tvExpiresAt.text = "만료일: --"
+        }
+    }
+
+    private fun calculateRemainingDays(expiresAt: String): Long {
+        return try {
+            val formats = listOf(
+                SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()),
+                SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()),
+                SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+            )
+
+            var expiresDate: Date? = null
+            for (format in formats) {
+                try {
+                    expiresDate = format.parse(expiresAt)
+                    if (expiresDate != null) break
+                } catch (e: Exception) {
+                    continue
+                }
+            }
+
+            if (expiresDate != null) {
+                val diffMs = expiresDate.time - System.currentTimeMillis()
+                val days = TimeUnit.MILLISECONDS.toDays(diffMs)
+                if (days < 0) 0 else days
+            } else {
+                0
+            }
+        } catch (e: Exception) {
+            0
+        }
+    }
+
+    private fun formatExpiresDate(expiresAt: String): String {
+        return try {
+            val formats = listOf(
+                SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.getDefault()),
+                SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()),
+                SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+            )
+
+            var expiresDate: Date? = null
+            for (format in formats) {
+                try {
+                    expiresDate = format.parse(expiresAt)
+                    if (expiresDate != null) break
+                } catch (e: Exception) {
+                    continue
+                }
+            }
+
+            if (expiresDate != null) {
+                val outputFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                outputFormat.format(expiresDate)
+            } else {
+                expiresAt
+            }
+        } catch (e: Exception) {
+            expiresAt
+        }
     }
 
     private fun disableAllInteractions() {
@@ -319,6 +400,10 @@ class MainActivity : AppCompatActivity() {
         seekbarRefreshDelay = findViewById(R.id.seekbar_refresh_delay)
         switchClickEffect = findViewById(R.id.switch_click_effect)
         switchHourlyReservation = findViewById(R.id.switch_hourly_reservation)
+
+        // 라이선스 UI
+        tvRemainingDays = findViewById(R.id.tv_remaining_days)
+        tvExpiresAt = findViewById(R.id.tv_expires_at)
     }
 
     private fun loadSettings() {
