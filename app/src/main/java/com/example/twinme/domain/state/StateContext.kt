@@ -92,5 +92,12 @@ data class StateContext(
      * ListDetectedHandler에서 계산한 실제 경과 시간 및 목표 지연 시간
      */
     var refreshElapsed: Long? = null,
-    var refreshTargetDelay: Long? = null
+    var refreshTargetDelay: Long? = null,
+
+    /**
+     * 마지막 새로고침 시간 (밀리초)
+     * ListDetectedHandler에서 새로고침 간격 체크에 사용
+     * 에러 복구 시 리셋되어 즉시 또는 설정 간격 후 새로고침 가능
+     */
+    var lastRefreshTime: Long = 0L
 )

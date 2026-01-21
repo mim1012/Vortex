@@ -249,6 +249,85 @@ object RemoteLogger {
         )
     }
 
+    // ============ 에러 복구 추적 로깅 ============
+
+    /**
+     * 에러 복구 시작 로깅
+     * ERROR_ASSIGNED/ERROR_TIMEOUT → TIMEOUT_RECOVERY 전환 시 호출
+     */
+    fun logErrorRecoveryStart(
+        errorState: CallAcceptState,
+        reason: String,
+        eligibleCallKey: String? = null
+    ) {
+        val ctx = context ?: return
+        val settings = SettingsManager.getInstance(ctx)
+
+        sendLog(
+            eventType = EventType.STATE_CHANGE,
+            detail = mapOf(
+                "event" to "ERROR_RECOVERY_START",
+                "error_state" to errorState.name,
+                "recovery_reason" to reason,
+                "eligible_call_key" to (eligibleCallKey ?: "none"),
+                "timestamp" to System.currentTimeMillis()
+            ),
+            contextInfo = buildConfigContext(settings)
+        )
+    }
+
+    /**
+     * 에러 복구 완료 로깅 (LIST_DETECTED 복귀)
+     * TIMEOUT_RECOVERY → LIST_DETECTED 전환 시 호출
+     */
+    fun logErrorRecoveryComplete(
+        backPressCount: Int,
+        elapsedMs: Long,
+        lastRefreshTimeReset: Boolean
+    ) {
+        val ctx = context ?: return
+        val settings = SettingsManager.getInstance(ctx)
+
+        sendLog(
+            eventType = EventType.STATE_CHANGE,
+            detail = mapOf(
+                "event" to "ERROR_RECOVERY_COMPLETE",
+                "back_press_count" to backPressCount,
+                "recovery_elapsed_ms" to elapsedMs,
+                "last_refresh_time_reset" to lastRefreshTimeReset,
+                "timestamp" to System.currentTimeMillis()
+            ),
+            contextInfo = buildConfigContext(settings)
+        )
+    }
+
+    /**
+     * 새로고침 타이머 상태 로깅
+     * LIST_DETECTED 상태에서 새로고침 간격 체크 시 호출
+     */
+    fun logRefreshTimerCheck(
+        elapsed: Long,
+        targetDelay: Long,
+        willRefresh: Boolean,
+        lastRefreshTime: Long
+    ) {
+        val ctx = context ?: return
+        val settings = SettingsManager.getInstance(ctx)
+
+        sendLog(
+            eventType = EventType.STATE_CHANGE,
+            detail = mapOf(
+                "event" to "REFRESH_TIMER_CHECK",
+                "elapsed_ms" to elapsed,
+                "target_delay_ms" to targetDelay,
+                "will_refresh" to willRefresh,
+                "last_refresh_time" to lastRefreshTime,
+                "current_time" to System.currentTimeMillis()
+            ),
+            contextInfo = buildConfigContext(settings)
+        )
+    }
+
     // ============ 배치 로깅 (버퍼에 추가, 즉시 전송 안 함) ============
 
     /**

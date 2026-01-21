@@ -26,7 +26,6 @@ class ListDetectedHandler @Inject constructor(
 ) : StateHandler {
     companion object {
         private const val TAG = "ListDetectedHandler"
-        private var lastRefreshTime = 0L
     }
 
     override val targetState = CallAcceptState.LIST_DETECTED
@@ -42,12 +41,21 @@ class ListDetectedHandler @Inject constructor(
 
         // 2. 시간 체크: 새로고침 간격 확인
         val currentTime = System.currentTimeMillis()
-        val elapsed = currentTime - lastRefreshTime
+        val elapsed = currentTime - context.lastRefreshTime  // ⭐ 변경: context 사용
         val targetDelay = calculateRefreshDelay()
 
+        // ⭐ 새로고침 타이머 체크 로깅
+        val willRefresh = elapsed >= targetDelay
+        com.example.twinme.logging.RemoteLogger.logRefreshTimerCheck(
+            elapsed = elapsed,
+            targetDelay = targetDelay,
+            willRefresh = willRefresh,
+            lastRefreshTime = context.lastRefreshTime
+        )
+
         // 3. 간격 도달 시 REFRESHING으로 전환
-        return if (elapsed >= targetDelay) {
-            lastRefreshTime = currentTime
+        return if (willRefresh) {
+            context.lastRefreshTime = currentTime  // ⭐ 변경: context 사용
             context.refreshElapsed = elapsed
             context.refreshTargetDelay = targetDelay
 

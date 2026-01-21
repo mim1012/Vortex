@@ -393,6 +393,14 @@ class CallAcceptEngineImpl @Inject constructor(
         // ⭐ ERROR_TIMEOUT → TIMEOUT_RECOVERY 자동 전환
         if (_currentState.value == CallAcceptState.ERROR_TIMEOUT) {
             Log.d(TAG, "ERROR_TIMEOUT → TIMEOUT_RECOVERY 자동 전환")
+
+            // ⭐ 에러 복구 시작 로깅
+            com.example.twinme.logging.RemoteLogger.logErrorRecoveryStart(
+                errorState = CallAcceptState.ERROR_TIMEOUT,
+                reason = "타임아웃 복구 시작",
+                eligibleCallKey = stateContext.eligibleCall?.callKey
+            )
+
             changeState(CallAcceptState.TIMEOUT_RECOVERY, "타임아웃 복구 시작")
             return 50L
         }
@@ -401,6 +409,14 @@ class CallAcceptEngineImpl @Inject constructor(
         // 원본: MacroEngine.java FAILED_ASSIGNED → TIMEOUT_RECOVERY → 백 버튼 → 리스트 복귀
         if (_currentState.value == CallAcceptState.ERROR_ASSIGNED) {
             Log.d(TAG, "ERROR_ASSIGNED → TIMEOUT_RECOVERY 자동 전환 (이미 배차됨)")
+
+            // ⭐ 에러 복구 시작 로깅
+            com.example.twinme.logging.RemoteLogger.logErrorRecoveryStart(
+                errorState = CallAcceptState.ERROR_ASSIGNED,
+                reason = "이미 배차됨 - 복구 시작",
+                eligibleCallKey = stateContext.eligibleCall?.callKey
+            )
+
             changeState(CallAcceptState.TIMEOUT_RECOVERY, "이미 배차됨 - 복구 시작")
             return 100L
         }
