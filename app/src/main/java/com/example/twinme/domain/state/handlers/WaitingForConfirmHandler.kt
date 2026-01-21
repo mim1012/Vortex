@@ -8,7 +8,6 @@ import com.example.twinme.data.CallAcceptState
 import com.example.twinme.domain.state.StateContext
 import com.example.twinme.domain.state.StateHandler
 import com.example.twinme.domain.state.StateResult
-import java.util.Random
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -87,13 +86,11 @@ class WaitingForConfirmHandler : StateHandler {
 
         // 클릭 실행
         val clickStartTime = System.currentTimeMillis()
-        Thread.sleep((50 + Random().nextInt(100)).toLong())
         confirmButton.refresh()
 
         var success = confirmButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
         if (!success) {
             confirmButton.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
-            Thread.sleep(50)
             success = confirmButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
         }
 

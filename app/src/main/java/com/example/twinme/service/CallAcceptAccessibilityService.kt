@@ -65,8 +65,6 @@ class CallAcceptAccessibilityService : AccessibilityService() {
         // ⭐⭐⭐ D3 최적화 터치 설정
         private const val TOUCH_DURATION_MIN = 80L   // 최소 duration
         private const val TOUCH_DURATION_MAX = 130L  // 최대 duration
-        private const val THROTTLE_MIN_MS = 1100L    // 재시도 최소 간격 (KakaoT 1초 쓰로틀링 회피)
-        private const val THROTTLE_MAX_MS = 1400L    // 재시도 최대 간격
 
         // ⭐⭐⭐ 실험 모드: X좌표 스윕 테스트
         // true로 설정하면 X좌표를 0.1 → 0.9로 스윕하면서 히트박스 찾기
@@ -81,10 +79,6 @@ class CallAcceptAccessibilityService : AccessibilityService() {
 
     // MediaEnhanced 방식: ThreadPool 사용
     private val threadPool = Executors.newCachedThreadPool()
-
-    // ⭐ 클릭 디바운스: KakaoT Driver의 1초 쓰로틀링 고려
-    private var lastClickTime: Long = 0
-    private val CLICK_DEBOUNCE_MS = 1100L  // 1.1초 (KakaoT 1초 쓰로틀링 + 여유)
 
     // ⭐ 터치 시각화 오버레이
     private var windowManager: WindowManager? = null
@@ -154,13 +148,6 @@ class CallAcceptAccessibilityService : AccessibilityService() {
      */
     private fun randomTouchDuration(): Long {
         return TOUCH_DURATION_MIN + Random().nextInt((TOUCH_DURATION_MAX - TOUCH_DURATION_MIN).toInt() + 1)
-    }
-
-    /**
-     * ⭐⭐⭐ D3 최적화 쓰로틀 대기 시간 (1100~1400ms)
-     */
-    private fun randomThrottleDelay(): Long {
-        return THROTTLE_MIN_MS + Random().nextInt((THROTTLE_MAX_MS - THROTTLE_MIN_MS).toInt() + 1)
     }
 
     /**

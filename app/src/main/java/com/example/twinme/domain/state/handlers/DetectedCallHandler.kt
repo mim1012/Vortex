@@ -8,7 +8,6 @@ import com.example.twinme.data.CallAcceptState
 import com.example.twinme.domain.state.StateContext
 import com.example.twinme.domain.state.StateHandler
 import com.example.twinme.domain.state.StateResult
-import java.util.Random
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -132,8 +131,7 @@ class DetectedCallHandler : StateHandler {
 
         val clickStartTime = System.currentTimeMillis()
 
-        // 랜덤 지연 + Shizuku 클릭
-        Thread.sleep(50L + Random().nextInt(100).toLong())
+        // Shizuku 클릭
         val success = context.shizukuInputTap(tapX, tapY)
         val elapsedMs = System.currentTimeMillis() - clickStartTime
 
