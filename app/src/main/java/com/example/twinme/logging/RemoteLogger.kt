@@ -55,7 +55,7 @@ object RemoteLogger {
         .build()
 
     private var context: Context? = null
-    private var isEnabled = false  // ⚠️ DEBUG: Remote logging disabled
+    private var isEnabled = true  // ✅ Remote logging enabled for production
     private val logScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     // ============ 배치 로깅용 버퍼 ============
