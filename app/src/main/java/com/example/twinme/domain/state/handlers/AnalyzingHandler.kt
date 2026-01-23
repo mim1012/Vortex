@@ -42,15 +42,28 @@ class AnalyzingHandler : StateHandler {
             "인천공항", "인천국제공항", "ICN", "인천 공항",
             "운서1동", "운서2동"
         )
+
+        // ⭐ 원본 APK 방식: 200ms 동안 재시도 (매 30ms마다 호출, 6-7회 시도)
+        private const val MAX_ANALYZING_DURATION_MS = 200L
     }
+
+    // ⭐ 상태 시작 시간 추적 (원본 APK의 stateStartTime)
+    private var stateStartTime = 0L
 
     override val targetState: CallAcceptState = CallAcceptState.ANALYZING
 
     override fun handle(node: AccessibilityNodeInfo, context: StateContext): StateResult {
         return try {
+            // ⭐ 상태 진입 시 시작 시간 기록 (원본 APK 방식)
+            if (stateStartTime == 0L) {
+                stateStartTime = System.currentTimeMillis()
+                Log.d(TAG, "ANALYZING 상태 시작 - 200ms 동안 재시도")
+            }
+
             // 설정 유효성 검사
             if (!context.filterSettings.validateSettings()) {
                 Log.w(TAG, "설정값이 유효하지 않음")
+                stateStartTime = 0L  // 리셋
                 return StateResult.Error(
                     CallAcceptState.ERROR_UNKNOWN,
                     "설정값 유효하지 않음"
@@ -62,11 +75,22 @@ class AnalyzingHandler : StateHandler {
             val calls = callsWithText.map { it.first }
 
             if (calls.isEmpty()) {
-                context.eligibleCall = null  // ⭐⭐⭐ v1.4 복원: 오래된 콜 정보 제거
-                return StateResult.Transition(
-                    CallAcceptState.WAITING_FOR_CALL,
-                    "콜 리스트가 비어있음"
-                )
+                // ⭐ 원본 APK 방식: 시간 기반 재시도
+                val elapsed = System.currentTimeMillis() - stateStartTime
+                if (elapsed >= MAX_ANALYZING_DURATION_MS) {
+                    // 200ms 지남 - 포기
+                    Log.d(TAG, "콜 리스트 없음 - 200ms 경과, WAITING_FOR_CALL로 복귀")
+                    stateStartTime = 0L  // 리셋
+                    context.eligibleCall = null
+                    return StateResult.Transition(
+                        CallAcceptState.WAITING_FOR_CALL,
+                        "콜 리스트 없음 (200ms 경과)"
+                    )
+                } else {
+                    // 계속 재시도
+                    Log.d(TAG, "콜 리스트 없음 - 재시도 중 (${elapsed}ms < 200ms)")
+                    return StateResult.NoChange
+                }
             }
 
             // 2. 각 콜의 조건 충족 여부 - RemoteLogger로 전송
@@ -100,6 +124,10 @@ class AnalyzingHandler : StateHandler {
 
             for (call in sortedCalls) {
                 if (call.isEligible(context.filterSettings, context.timeSettings)) {
+                    // ⭐ 조건 충족 콜 발견 - 성공
+                    Log.d(TAG, "조건 충족 콜 발견: ${call.price}원 (${call.source} → ${call.destination})")
+                    stateStartTime = 0L  // 리셋
+
                     // 콜 발견 Toast
                     context.applicationContext?.let { ctx ->
                         NotificationHelper.showToast(ctx, "${call.reservationTime} ${call.price}원 콜 발견")
@@ -114,14 +142,26 @@ class AnalyzingHandler : StateHandler {
                 }
             }
 
-            context.eligibleCall = null  // ⭐⭐⭐ v1.4 복원: 조건 불충족 시 오래된 콜 정보 제거
-            StateResult.Transition(
-                CallAcceptState.WAITING_FOR_CALL,
-                "조건 충족 콜 없음"
-            )
+            // ⭐ 원본 APK 방식: 조건 충족 콜 없음 - 시간 기반 재시도
+            val elapsed = System.currentTimeMillis() - stateStartTime
+            if (elapsed >= MAX_ANALYZING_DURATION_MS) {
+                // 200ms 지남 - 포기
+                Log.d(TAG, "조건 충족 콜 없음 - 200ms 경과, WAITING_FOR_CALL로 복귀")
+                stateStartTime = 0L  // 리셋
+                context.eligibleCall = null
+                StateResult.Transition(
+                    CallAcceptState.WAITING_FOR_CALL,
+                    "조건 충족 콜 없음 (200ms 경과)"
+                )
+            } else {
+                // 계속 재시도
+                Log.d(TAG, "조건 충족 콜 없음 - 재시도 중 (${elapsed}ms < 200ms)")
+                StateResult.NoChange
+            }
 
         } catch (e: NullPointerException) {
             Log.e(TAG, "NPE 발생 - UI 구조 변경 가능성", e)
+            stateStartTime = 0L  // 리셋
             context.logger.logError(
                 type = "AnalyzingHandler_NPE",
                 message = "파싱 실패: null 참조 - ${e.message}",
@@ -133,6 +173,7 @@ class AnalyzingHandler : StateHandler {
             )
         } catch (e: Exception) {
             Log.e(TAG, "AnalyzingHandler 예외 발생", e)
+            stateStartTime = 0L  // 리셋
             context.logger.logError(
                 type = "AnalyzingHandler_${e.javaClass.simpleName}",
                 message = "파싱 중 예외 발생: ${e.message}",

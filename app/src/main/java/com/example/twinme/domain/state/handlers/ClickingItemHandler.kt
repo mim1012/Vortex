@@ -58,11 +58,26 @@ class ClickingItemHandler : StateHandler {
     override val targetState = CallAcceptState.CLICKING_ITEM
 
     override fun handle(node: AccessibilityNodeInfo, context: StateContext): StateResult {
-        // "이미 배차" 감지
+        // "이미 배차" 감지 → 다이얼로그 확인 버튼 클릭
         if (node.findAccessibilityNodeInfosByText("이미 배차").isNotEmpty()) {
+            Log.d(TAG, "이미 배차 다이얼로그 감지 - 확인 버튼 클릭 시도")
             retryCount = 0
             context.eligibleCall = null  // ⭐⭐⭐ v1.4 복원: 오래된 콜 정보 제거
+            if (clickDialogConfirmButton(node)) {
+                return StateResult.Transition(CallAcceptState.LIST_DETECTED, "이미 배차 다이얼로그 닫음")
+            }
             return StateResult.Error(CallAcceptState.ERROR_ASSIGNED, "이미 배차됨")
+        }
+
+        // "콜이 취소되었습니다" 감지 → 다이얼로그 확인 버튼 클릭
+        if (node.findAccessibilityNodeInfosByText("콜이 취소되었습니다").isNotEmpty()) {
+            Log.d(TAG, "콜 취소 다이얼로그 감지 - 확인 버튼 클릭 시도")
+            retryCount = 0
+            context.eligibleCall = null
+            if (clickDialogConfirmButton(node)) {
+                return StateResult.Transition(CallAcceptState.LIST_DETECTED, "콜 취소 다이얼로그 닫음")
+            }
+            return StateResult.Error(CallAcceptState.ERROR_ASSIGNED, "콜이 취소됨")
         }
 
         val eligibleCall = context.eligibleCall
@@ -127,5 +142,29 @@ class ClickingItemHandler : StateHandler {
             }
             return StateResult.NoChange
         }
+    }
+
+    /**
+     * "이미 배차" / "콜이 취소되었습니다" 다이얼로그의 확인 버튼 클릭
+     * @return true if clicked successfully
+     */
+    private fun clickDialogConfirmButton(node: AccessibilityNodeInfo): Boolean {
+        // 1. 텍스트로 찾기 ("확인", "닫기", "OK")
+        val dialogTexts = listOf("확인", "닫기", "OK")
+        for (text in dialogTexts) {
+            val nodes = node.findAccessibilityNodeInfosByText(text)
+            for (foundNode in nodes) {
+                if (foundNode.isClickable) {
+                    val success = foundNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                    if (success) {
+                        Log.d(TAG, "다이얼로그 확인 버튼 클릭 성공 (텍스트: $text)")
+                        return true
+                    }
+                }
+            }
+        }
+
+        Log.w(TAG, "다이얼로그 확인 버튼을 찾을 수 없음")
+        return false
     }
 }

@@ -47,9 +47,22 @@ class WaitingForConfirmHandler : StateHandler {
             return StateResult.Error(CallAcceptState.ERROR_TIMEOUT, "뒤로가기 감지")
         }
 
-        // "이미 배차" 감지
+        // "이미 배차" 감지 → 다이얼로그 확인 버튼 클릭
         if (node.findAccessibilityNodeInfosByText("이미 배차").isNotEmpty()) {
+            Log.d(TAG, "이미 배차 다이얼로그 감지 - 확인 버튼 클릭 시도")
+            if (clickDialogConfirmButton(node, context)) {
+                return StateResult.Transition(CallAcceptState.LIST_DETECTED, "이미 배차 다이얼로그 닫음")
+            }
             return StateResult.Error(CallAcceptState.ERROR_ASSIGNED, "이미 배차됨")
+        }
+
+        // "콜이 취소되었습니다" 감지 → 다이얼로그 확인 버튼 클릭
+        if (node.findAccessibilityNodeInfosByText("콜이 취소되었습니다").isNotEmpty()) {
+            Log.d(TAG, "콜 취소 다이얼로그 감지 - 확인 버튼 클릭 시도")
+            if (clickDialogConfirmButton(node, context)) {
+                return StateResult.Transition(CallAcceptState.LIST_DETECTED, "콜 취소 다이얼로그 닫음")
+            }
+            return StateResult.Error(CallAcceptState.ERROR_ASSIGNED, "콜이 취소됨")
         }
 
         // 버튼 검색 (View ID → 텍스트)
@@ -112,6 +125,47 @@ class WaitingForConfirmHandler : StateHandler {
         } else {
             StateResult.Error(CallAcceptState.ERROR_UNKNOWN, "확인 버튼 클릭 실패")
         }
+    }
+
+    /**
+     * "이미 배차" / "콜이 취소되었습니다" 다이얼로그의 확인 버튼 클릭
+     * @return true if clicked successfully
+     */
+    private fun clickDialogConfirmButton(node: AccessibilityNodeInfo, context: StateContext): Boolean {
+        // 1. android:id/button1 (안드로이드 기본 확인 버튼)
+        var confirmButton = context.findNode(node, "android:id/button1")
+
+        // 2. 카카오택시 btn_positive
+        if (confirmButton == null) {
+            confirmButton = context.findNode(node, CONFIRM_BUTTON_ID)
+        }
+
+        // 3. 텍스트로 찾기 ("확인", "닫기", "OK")
+        if (confirmButton == null) {
+            val dialogTexts = listOf("확인", "닫기", "OK")
+            for (text in dialogTexts) {
+                confirmButton = context.findNodeByText(node, text)
+                if (confirmButton != null && confirmButton.isClickable) {
+                    break
+                }
+            }
+        }
+
+        if (confirmButton == null) {
+            Log.w(TAG, "다이얼로그 확인 버튼을 찾을 수 없음")
+            return false
+        }
+
+        // 버튼 클릭 (performAction 사용)
+        val success = confirmButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        if (!success) {
+            // Fallback: FOCUS + CLICK
+            confirmButton.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+            return confirmButton.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        }
+
+        Log.d(TAG, "다이얼로그 확인 버튼 클릭 성공")
+        return true
     }
 
     /**
