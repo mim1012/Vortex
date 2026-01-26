@@ -26,11 +26,84 @@ class WaitingForConfirmHandler : StateHandler {
         private const val TAG = "WaitingForConfirmHandler"
         private const val CONFIRM_BUTTON_ID = "com.kakao.taxi.driver:id/btn_positive"
         private val FALLBACK_TEXTS = listOf("수락하기", "확인", "수락", "OK", "예", "Yes")
+        private const val MAX_CLICK_RETRY = 5  // 최대 클릭 재시도 횟수
     }
+
+    // 클릭 후 다이얼로그 대기 상태 추적
+    private var clickedAndWaiting = false
+    private var waitRetryCount = 0
 
     override val targetState: CallAcceptState = CallAcceptState.WAITING_FOR_CONFIRM
 
     override fun handle(node: AccessibilityNodeInfo, context: StateContext): StateResult {
+        // ⭐ 클릭 후 대기 중 처리 (DetectedCallHandler와 동일한 패턴)
+        if (clickedAndWaiting) {
+            // 1. CALL_ACCEPTED 화면 감지 (정상 수락)
+            if (node.findAccessibilityNodeInfosByText("예약콜 리스트").isNotEmpty()) {
+                resetState()
+                return StateResult.Transition(CallAcceptState.CALL_ACCEPTED, "콜 수락 완료")
+            }
+
+            // 2. "이미 배차" 확인 → 다이얼로그 확인 버튼 클릭
+            if (node.findAccessibilityNodeInfosByText("이미 배차").isNotEmpty()) {
+                Log.d(TAG, "이미 배차 다이얼로그 감지 - 확인 버튼 클릭 시도")
+                com.example.twinme.logging.RemoteLogger.logError(
+                    errorType = "DIALOG_ASSIGNED",
+                    message = "이미 배차 다이얼로그 감지 (클릭 후 대기 중)",
+                    stackTrace = "callKey: ${context.eligibleCall?.callKey}"
+                )
+                if (clickDialogConfirmButton(node, context)) {
+                    resetState()
+                    context.eligibleCall = null
+                    com.example.twinme.logging.RemoteLogger.logError(
+                        errorType = "DIALOG_ASSIGNED_CLOSED",
+                        message = "이미 배차 다이얼로그 확인 버튼 클릭 → LIST_DETECTED 복귀",
+                        stackTrace = ""
+                    )
+                    // 다이얼로그 닫힌 후 리스트로 복귀
+                    return StateResult.Transition(CallAcceptState.LIST_DETECTED, "이미 배차 다이얼로그 닫음")
+                }
+                // ⭐ 버튼 못 찾으면 계속 대기 (재시도)
+                return StateResult.NoChange
+            }
+
+            // 3. "콜이 취소되었습니다" 확인 → 다이얼로그 확인 버튼 클릭
+            if (node.findAccessibilityNodeInfosByText("콜이 취소되었습니다").isNotEmpty()) {
+                Log.d(TAG, "콜 취소 다이얼로그 감지 - 확인 버튼 클릭 시도")
+                com.example.twinme.logging.RemoteLogger.logError(
+                    errorType = "DIALOG_CANCELLED",
+                    message = "콜 취소 다이얼로그 감지 (클릭 후 대기 중)",
+                    stackTrace = "callKey: ${context.eligibleCall?.callKey}"
+                )
+                if (clickDialogConfirmButton(node, context)) {
+                    resetState()
+                    context.eligibleCall = null
+                    com.example.twinme.logging.RemoteLogger.logError(
+                        errorType = "DIALOG_CANCELLED_CLOSED",
+                        message = "콜 취소 다이얼로그 확인 버튼 클릭 → LIST_DETECTED 복귀",
+                        stackTrace = ""
+                    )
+                    // 다이얼로그 닫힌 후 리스트로 복귀
+                    return StateResult.Transition(CallAcceptState.LIST_DETECTED, "콜 취소 다이얼로그 닫음")
+                }
+                // ⭐ 버튼 못 찾으면 계속 대기 (재시도)
+                return StateResult.NoChange
+            }
+
+            // 4. 재시도 카운트 증가
+            waitRetryCount++
+            if (waitRetryCount >= MAX_CLICK_RETRY) {
+                Log.w(TAG, "클릭 후 응답 없음 - 타임아웃 ($waitRetryCount/$MAX_CLICK_RETRY)")
+                resetState()
+                context.eligibleCall = null
+                return StateResult.Error(CallAcceptState.ERROR_TIMEOUT, "클릭 후 응답 없음")
+            }
+
+            // 5. 계속 대기
+            return StateResult.NoChange
+        }
+
+        // ========== 여기부터는 클릭 전 로직 ==========
         val confirmButtonVisible = node.findAccessibilityNodeInfosByViewId(CONFIRM_BUTTON_ID).isNotEmpty()
         val hasListScreen = node.findAccessibilityNodeInfosByText("예약콜 리스트").isNotEmpty()
 
@@ -47,21 +120,47 @@ class WaitingForConfirmHandler : StateHandler {
             return StateResult.Error(CallAcceptState.ERROR_TIMEOUT, "뒤로가기 감지")
         }
 
-        // "이미 배차" 감지 → 다이얼로그 확인 버튼 클릭
+        // "이미 배차" 감지 (클릭 전) → 다이얼로그 확인 버튼 클릭
         if (node.findAccessibilityNodeInfosByText("이미 배차").isNotEmpty()) {
-            Log.d(TAG, "이미 배차 다이얼로그 감지 - 확인 버튼 클릭 시도")
+            Log.d(TAG, "이미 배차 다이얼로그 감지 (클릭 전) - 확인 버튼 클릭 시도")
+            com.example.twinme.logging.RemoteLogger.logError(
+                errorType = "DIALOG_ASSIGNED",
+                message = "이미 배차 다이얼로그 감지 (클릭 전)",
+                stackTrace = "callKey: ${context.eligibleCall?.callKey}"
+            )
             if (clickDialogConfirmButton(node, context)) {
+                context.eligibleCall = null
+                com.example.twinme.logging.RemoteLogger.logError(
+                    errorType = "DIALOG_ASSIGNED_CLOSED",
+                    message = "이미 배차 다이얼로그 확인 버튼 클릭 (클릭 전) → LIST_DETECTED 복귀",
+                    stackTrace = ""
+                )
                 return StateResult.Transition(CallAcceptState.LIST_DETECTED, "이미 배차 다이얼로그 닫음")
             }
+            // 버튼 못 찾으면 에러 처리
+            context.eligibleCall = null
             return StateResult.Error(CallAcceptState.ERROR_ASSIGNED, "이미 배차됨")
         }
 
-        // "콜이 취소되었습니다" 감지 → 다이얼로그 확인 버튼 클릭
+        // "콜이 취소되었습니다" 감지 (클릭 전) → 다이얼로그 확인 버튼 클릭
         if (node.findAccessibilityNodeInfosByText("콜이 취소되었습니다").isNotEmpty()) {
-            Log.d(TAG, "콜 취소 다이얼로그 감지 - 확인 버튼 클릭 시도")
+            Log.d(TAG, "콜 취소 다이얼로그 감지 (클릭 전) - 확인 버튼 클릭 시도")
+            com.example.twinme.logging.RemoteLogger.logError(
+                errorType = "DIALOG_CANCELLED",
+                message = "콜 취소 다이얼로그 감지 (클릭 전)",
+                stackTrace = "callKey: ${context.eligibleCall?.callKey}"
+            )
             if (clickDialogConfirmButton(node, context)) {
+                context.eligibleCall = null
+                com.example.twinme.logging.RemoteLogger.logError(
+                    errorType = "DIALOG_CANCELLED_CLOSED",
+                    message = "콜 취소 다이얼로그 확인 버튼 클릭 (클릭 전) → LIST_DETECTED 복귀",
+                    stackTrace = ""
+                )
                 return StateResult.Transition(CallAcceptState.LIST_DETECTED, "콜 취소 다이얼로그 닫음")
             }
+            // 버튼 못 찾으면 에러 처리
+            context.eligibleCall = null
             return StateResult.Error(CallAcceptState.ERROR_ASSIGNED, "콜이 취소됨")
         }
 
@@ -120,11 +219,25 @@ class WaitingForConfirmHandler : StateHandler {
             callKey = context.eligibleCall?.callKey ?: ""
         )
 
-        return if (success) {
-            StateResult.Transition(CallAcceptState.CALL_ACCEPTED, "확인 버튼 클릭 성공")
-        } else {
-            StateResult.Error(CallAcceptState.ERROR_UNKNOWN, "확인 버튼 클릭 실패")
+        if (!success) {
+            resetState()
+            return StateResult.Error(CallAcceptState.ERROR_UNKNOWN, "확인 버튼 클릭 실패")
         }
+
+        // ⭐ 클릭 후 즉시 전환하지 말고 대기 상태로 (DetectedCallHandler와 동일한 패턴)
+        // 다음 handle() 호출에서 "예약콜 리스트" / "이미 배차" / "콜이 취소됨" 확인
+        clickedAndWaiting = true
+        waitRetryCount = 0
+        Log.d(TAG, "확인 버튼 클릭 완료 - 응답 대기 시작")
+        return StateResult.NoChange
+    }
+
+    /**
+     * 상태 초기화
+     */
+    private fun resetState() {
+        clickedAndWaiting = false
+        waitRetryCount = 0
     }
 
     /**
