@@ -24,6 +24,7 @@ import java.util.concurrent.TimeUnit
 class WaitingForConfirmHandler : StateHandler {
     companion object {
         private const val TAG = "WaitingForConfirmHandler"
+        private const val CONDITION_TAG = "CONDITION"  // ADB 필터용
         private const val CONFIRM_BUTTON_ID = "com.kakao.taxi.driver:id/btn_positive"
         private val FALLBACK_TEXTS = listOf("수락하기", "확인", "수락", "OK", "예", "Yes")
         private const val MAX_CLICK_RETRY = 5  // 최대 클릭 재시도 횟수
@@ -36,17 +37,11 @@ class WaitingForConfirmHandler : StateHandler {
     override val targetState: CallAcceptState = CallAcceptState.WAITING_FOR_CONFIRM
 
     override fun handle(node: AccessibilityNodeInfo, context: StateContext): StateResult {
-        // ⭐ 클릭 후 대기 중 처리 (DetectedCallHandler와 동일한 패턴)
+        // ⭐ 클릭 후 대기 중 처리
         if (clickedAndWaiting) {
-            // 1. CALL_ACCEPTED 화면 감지 (정상 수락)
-            if (node.findAccessibilityNodeInfosByText("예약콜 리스트").isNotEmpty()) {
-                resetState()
-                return StateResult.Transition(CallAcceptState.CALL_ACCEPTED, "콜 수락 완료")
-            }
-
-            // 2. "이미 배차" 확인 → 다이얼로그 확인 버튼 클릭
+            // 1. "이미 배차" 감지 → 다이얼로그 확인 버튼 클릭 (알림 X)
             if (node.findAccessibilityNodeInfosByText("이미 배차").isNotEmpty()) {
-                Log.d(TAG, "이미 배차 다이얼로그 감지 - 확인 버튼 클릭 시도")
+                Log.i(CONDITION_TAG, "❌ 이미 배차 → LIST_DETECTED 복귀 (알림X, eligibleCall 초기화)")
                 com.example.twinme.logging.RemoteLogger.logError(
                     errorType = "DIALOG_ASSIGNED",
                     message = "이미 배차 다이얼로그 감지 (클릭 후 대기 중)",
@@ -55,21 +50,16 @@ class WaitingForConfirmHandler : StateHandler {
                 if (clickDialogConfirmButton(node, context)) {
                     resetState()
                     context.eligibleCall = null
-                    com.example.twinme.logging.RemoteLogger.logError(
-                        errorType = "DIALOG_ASSIGNED_CLOSED",
-                        message = "이미 배차 다이얼로그 확인 버튼 클릭 → LIST_DETECTED 복귀",
-                        stackTrace = ""
-                    )
-                    // 다이얼로그 닫힌 후 리스트로 복귀
+                    // 다이얼로그 닫힌 후 리스트로 복귀 (알림 X)
                     return StateResult.Transition(CallAcceptState.LIST_DETECTED, "이미 배차 다이얼로그 닫음")
                 }
-                // ⭐ 버튼 못 찾으면 계속 대기 (재시도)
+                // 버튼 못 찾으면 계속 대기 (재시도)
                 return StateResult.NoChange
             }
 
-            // 3. "콜이 취소되었습니다" 확인 → 다이얼로그 확인 버튼 클릭
+            // 2. "콜이 취소되었습니다" 감지 → 다이얼로그 확인 버튼 클릭 (알림 X)
             if (node.findAccessibilityNodeInfosByText("콜이 취소되었습니다").isNotEmpty()) {
-                Log.d(TAG, "콜 취소 다이얼로그 감지 - 확인 버튼 클릭 시도")
+                Log.i(CONDITION_TAG, "❌ 콜 취소됨 → LIST_DETECTED 복귀 (알림X, eligibleCall 초기화)")
                 com.example.twinme.logging.RemoteLogger.logError(
                     errorType = "DIALOG_CANCELLED",
                     message = "콜 취소 다이얼로그 감지 (클릭 후 대기 중)",
@@ -78,28 +68,25 @@ class WaitingForConfirmHandler : StateHandler {
                 if (clickDialogConfirmButton(node, context)) {
                     resetState()
                     context.eligibleCall = null
-                    com.example.twinme.logging.RemoteLogger.logError(
-                        errorType = "DIALOG_CANCELLED_CLOSED",
-                        message = "콜 취소 다이얼로그 확인 버튼 클릭 → LIST_DETECTED 복귀",
-                        stackTrace = ""
-                    )
-                    // 다이얼로그 닫힌 후 리스트로 복귀
+                    // 다이얼로그 닫힌 후 리스트로 복귀 (알림 X)
                     return StateResult.Transition(CallAcceptState.LIST_DETECTED, "콜 취소 다이얼로그 닫음")
                 }
-                // ⭐ 버튼 못 찾으면 계속 대기 (재시도)
+                // 버튼 못 찾으면 계속 대기 (재시도)
                 return StateResult.NoChange
             }
 
-            // 4. 재시도 카운트 증가
+            // 3. 재시도 카운트 증가
             waitRetryCount++
+            Log.i(TAG, "⏳ [CONFIRM] 응답 대기 중 ($waitRetryCount/$MAX_CLICK_RETRY) - 에러 다이얼로그 없음")
+
+            // 4. ⭐ 에러 다이얼로그 없음 = 정상 수락! → CALL_ACCEPTED (알림 O, pause)
             if (waitRetryCount >= MAX_CLICK_RETRY) {
-                Log.w(TAG, "클릭 후 응답 없음 - 타임아웃 ($waitRetryCount/$MAX_CLICK_RETRY)")
+                Log.i(CONDITION_TAG, "✅ 수락 완료! → CALL_ACCEPTED (알림O, pause, callKey=${context.eligibleCall?.callKey})")
                 resetState()
-                context.eligibleCall = null
-                return StateResult.Error(CallAcceptState.ERROR_TIMEOUT, "클릭 후 응답 없음")
+                return StateResult.Transition(CallAcceptState.CALL_ACCEPTED, "콜 수락 완료")
             }
 
-            // 5. 계속 대기
+            // 5. 계속 대기 (에러 다이얼로그 체크 중)
             return StateResult.NoChange
         }
 
@@ -224,11 +211,11 @@ class WaitingForConfirmHandler : StateHandler {
             return StateResult.Error(CallAcceptState.ERROR_UNKNOWN, "확인 버튼 클릭 실패")
         }
 
-        // ⭐ 클릭 후 즉시 전환하지 말고 대기 상태로 (DetectedCallHandler와 동일한 패턴)
-        // 다음 handle() 호출에서 "예약콜 리스트" / "이미 배차" / "콜이 취소됨" 확인
+        // ⭐ 클릭 후 즉시 전환하지 말고 대기 상태로
+        // 다음 handle()에서 "이미 배차" / "콜이 취소됨" 체크
         clickedAndWaiting = true
         waitRetryCount = 0
-        Log.d(TAG, "확인 버튼 클릭 완료 - 응답 대기 시작")
+        Log.i(TAG, "🔘 [CONFIRM] btn_positive 클릭 완료 - 응답 대기 시작 (callKey: ${context.eligibleCall?.callKey})")
         return StateResult.NoChange
     }
 

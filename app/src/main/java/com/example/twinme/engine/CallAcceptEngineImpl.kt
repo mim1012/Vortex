@@ -201,8 +201,16 @@ class CallAcceptEngineImpl @Inject constructor(
      * 원본: MacroEngine.smali 라인 2486-2503의 isPaused 체크
      */
     override fun pause() {
-        Log.d(TAG, "엔진 일시정지 (pause) - 콜 수락 완료")
+        Log.i("CONDITION", "⏸️ pause() 호출 - state=${_currentState.value}, isPaused: ${_isPaused.value} → true")
         _isPaused.value = true
+
+        // 서버 로그
+        com.example.twinme.logging.RemoteLogger.logStateChange(
+            fromState = _currentState.value.name,
+            toState = "PAUSED",
+            reason = "콜 수락 완료 - 엔진 일시정지",
+            eligibleCallKey = stateContext.eligibleCall?.callKey
+        )
     }
 
     /**
@@ -210,8 +218,15 @@ class CallAcceptEngineImpl @Inject constructor(
      * 원본: MacroEngine.smali의 resume() 메서드
      */
     override fun resume() {
-        Log.d(TAG, "엔진 재개 (resume) - 다음 콜 대기 시작")
+        Log.i("CONDITION", "▶️ resume() 호출 - state=${_currentState.value}, isPaused: ${_isPaused.value} → false")
         _isPaused.value = false
+
+        // ⭐ 중요: 재개 시 eligibleCall 초기화 (오래된 콜 정보 제거)
+        if (stateContext.eligibleCall != null) {
+            Log.i("CONDITION", "▶️ resume() - eligibleCall 초기화: ${stateContext.eligibleCall?.callKey}")
+            stateContext.eligibleCall = null
+        }
+
         changeState(CallAcceptState.WAITING_FOR_CALL, "엔진 재개됨")
     }
 
@@ -316,7 +331,8 @@ class CallAcceptEngineImpl @Inject constructor(
         // 4. ⭐ isPaused 확인 (원본 라인 2486-2503)
         val delayMs = if (_isPaused.value) {
             // 일시정지 중이면 상태 머신 실행 안 함, 500ms 대기
-            Log.v(TAG, "엔진 일시정지 중 - 상태 머신 실행 생략")
+            // ⭐ CONDITION 태그로 ADB에서 확인 가능
+            Log.i("CONDITION", "⏸️ 일시정지 중 - 실행 생략 (state=${_currentState.value})")
             500L
         } else {
             // 5. 상태 머신 한 번 실행 (원본 라인 2486-2523)
@@ -441,9 +457,10 @@ class CallAcceptEngineImpl @Inject constructor(
                 }
                 is StateResult.PauseAndTransition -> {
                     // ⭐ 원본 APK SUCCESS 상태 처리: pause() + IDLE 전환
-                    Log.i(TAG, "PauseAndTransition: ${result.reason}")
+                    Log.i("CONDITION", "⏸️ PauseAndTransition: ${_currentState.value} → ${result.nextState}")
                     pause()  // 엔진 일시정지
                     changeState(result.nextState, result.reason)
+                    Log.i("CONDITION", "⏸️ 완료 - isPaused=${_isPaused.value}, state=${_currentState.value}")
                 }
                 StateResult.NoChange -> {
                     // 상태 유지
@@ -648,7 +665,21 @@ class CallAcceptEngineImpl @Inject constructor(
         if (_currentState.value == newState) return
 
         val fromState = _currentState.value
-        Log.d(TAG, "상태 변경: $fromState -> $newState (이유: $reason)")
+
+        // ⭐ 중요한 상태 전환만 CONDITION 로그로 표시
+        val isImportant = newState in listOf(
+            CallAcceptState.CALL_ACCEPTED,
+            CallAcceptState.IDLE,
+            CallAcceptState.WAITING_FOR_CALL,
+            CallAcceptState.CLICKING_ITEM,
+            CallAcceptState.ERROR_ASSIGNED,
+            CallAcceptState.LIST_DETECTED
+        )
+        if (isImportant) {
+            Log.i("CONDITION", "🔄 $fromState → $newState (eligibleCall=${stateContext.eligibleCall?.callKey ?: "null"})")
+        } else {
+            Log.d(TAG, "상태 변경: $fromState → $newState (이유: $reason)")
+        }
 
         _currentState.value = newState
 

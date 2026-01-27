@@ -29,6 +29,7 @@ import com.example.twinme.util.NotificationHelper
 class AnalyzingHandler : StateHandler {
     companion object {
         private const val TAG = "AnalyzingHandler"
+        private const val CONDITION_TAG = "CONDITION"  // ADB 필터용
 
         // RecyclerView 클래스명
         private const val RECYCLER_VIEW_CLASS = "androidx.recyclerview.widget.RecyclerView"
@@ -57,7 +58,10 @@ class AnalyzingHandler : StateHandler {
             // ⭐ 상태 진입 시 시작 시간 기록 (원본 APK 방식)
             if (stateStartTime == 0L) {
                 stateStartTime = System.currentTimeMillis()
-                Log.d(TAG, "ANALYZING 상태 시작 - 200ms 동안 재시도")
+                Log.i(TAG, "🔍 [ANALYZING] 상태 시작 - eligibleCall=${context.eligibleCall?.callKey ?: "null"}")
+            } else {
+                val elapsed = System.currentTimeMillis() - stateStartTime
+                Log.i(TAG, "🔍 [ANALYZING] 재진입 - elapsed=${elapsed}ms, eligibleCall=${context.eligibleCall?.callKey ?: "null"}")
             }
 
             // 설정 유효성 검사
@@ -93,39 +97,48 @@ class AnalyzingHandler : StateHandler {
                 }
             }
 
-            // 2. 각 콜의 조건 충족 여부 - RemoteLogger로 전송
+            // 2. 조건 충족 콜만 로깅 (반복 로그 방지)
             callsWithText.forEachIndexed { index, (call, collectedText) ->
                 val eligible = call.isEligible(context.filterSettings, context.timeSettings)
-                val rejectReason = if (!eligible) getRejectReason(call, context) else null
-                val confidenceStr = call.confidence?.name ?: "UNKNOWN"
 
-                // RemoteLogger로 전송 (Logcat 제거)
-                context.logger.logCallParsed(
-                    index = index,
-                    source = call.source,
-                    destination = call.destination,
-                    price = call.price,
-                    callType = call.callType,
-                    reservationTime = call.reservationTime,
-                    eligible = eligible,
-                    rejectReason = rejectReason,
-                    confidence = confidenceStr,
-                    debugInfo = call.debugInfo,
-                    callKey = call.callKey,
-                    collectedText = collectedText
-                )
+                // ⭐ 조건 충족 콜만 로깅 (eligible=true)
+                if (eligible) {
+                    val confidenceStr = call.confidence?.name ?: "UNKNOWN"
+                    context.logger.logCallParsed(
+                        index = index,
+                        source = call.source,
+                        destination = call.destination,
+                        price = call.price,
+                        callType = call.callType,
+                        reservationTime = call.reservationTime,
+                        eligible = eligible,
+                        rejectReason = null,
+                        confidence = confidenceStr,
+                        debugInfo = call.debugInfo,
+                        callKey = call.callKey,
+                        collectedText = collectedText
+                    )
+                    // 서버로 즉시 전송
+                    context.logger.flushLogsAsync()
+                }
             }
-
-            // 서버로 즉시 전송
-            context.logger.flushLogsAsync()
 
             // 3. 금액 기준 내림차순 정렬 후 조건에 맞는 콜 찾기
             val sortedCalls = calls.sortedByDescending { it.price }
 
+            // ⭐ 조건 검사 로그 (ADB 필터: "CONDITION")
+            Log.i(CONDITION_TAG, "━━━━━ 조건 검사 시작 ━━━━━")
+            Log.i(CONDITION_TAG, "설정: minAmount=${context.filterSettings.minAmount}, keywordMinAmount=${context.filterSettings.keywordMinAmount}")
+            Log.i(CONDITION_TAG, "설정: keywords=${context.filterSettings.keywords}, mode=${context.filterSettings.conditionMode}")
+            Log.i(CONDITION_TAG, "콜 개수: ${sortedCalls.size}개")
+
             for (call in sortedCalls) {
-                if (call.isEligible(context.filterSettings, context.timeSettings)) {
+                val isEligible = call.isEligible(context.filterSettings, context.timeSettings)
+                Log.i(CONDITION_TAG, "▶ 콜: price=${call.price}원, eligible=$isEligible, src=${call.source.take(15)}→${call.destination.take(15)}")
+
+                if (isEligible) {
                     // ⭐ 조건 충족 콜 발견 - 성공
-                    Log.d(TAG, "조건 충족 콜 발견: ${call.price}원 (${call.source} → ${call.destination})")
+                    Log.i(CONDITION_TAG, "✅ 조건 충족! ${call.price}원 (${call.source.take(15)} → ${call.destination.take(15)})")
                     stateStartTime = 0L  // 리셋
 
                     // 콜 발견 Toast

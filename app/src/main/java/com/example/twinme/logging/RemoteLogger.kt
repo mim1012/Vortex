@@ -166,6 +166,56 @@ object RemoteLogger {
         )
     }
 
+    // ============ 상태 변경 로깅 (String 버전) ============
+
+    fun logStateChange(
+        fromState: String,
+        toState: String,
+        reason: String,
+        eligibleCallKey: String? = null
+    ) {
+        val ctx = context ?: return
+        val settings = SettingsManager.getInstance(ctx)
+
+        sendLog(
+            eventType = EventType.STATE_CHANGE,
+            detail = mapOf(
+                "from_state" to fromState,
+                "to_state" to toState,
+                "reason" to reason,
+                "eligible_call_key" to (eligibleCallKey ?: ""),
+                "timestamp" to System.currentTimeMillis()
+            ),
+            contextInfo = buildConfigContext(settings)
+        )
+    }
+
+    // ============ 콜 수락 성공 로깅 ============
+
+    fun logCallAccepted(
+        callKey: String,
+        price: Int,
+        source: String,
+        destination: String
+    ) {
+        val ctx = context ?: return
+        val settings = SettingsManager.getInstance(ctx)
+
+        sendLog(
+            eventType = EventType.CALL_RESULT,
+            detail = mapOf(
+                "event" to "CALL_ACCEPTED",
+                "success" to true,
+                "call_key" to callKey,
+                "price" to price,
+                "source" to source,
+                "destination" to destination,
+                "timestamp" to System.currentTimeMillis()
+            ),
+            contextInfo = buildConfigContext(settings)
+        )
+    }
+
     // ============ 노드 클릭 로깅 ============
 
     fun logNodeClick(
@@ -364,7 +414,9 @@ object RemoteLogger {
         eligible: Boolean,
         rejectReason: String?,
         confidence: String = "UNKNOWN",
-        debugInfo: Map<String, Any> = emptyMap()
+        debugInfo: Map<String, Any> = emptyMap(),
+        callKey: String = "",
+        collectedText: String = ""
     ) {
         // debugInfo를 JSON 변환 가능한 맵으로 필터링
         val filteredDebugInfo = debugInfo.mapValues { entry ->
@@ -386,8 +438,10 @@ object RemoteLogger {
                 "reservationTime" to reservationTime,
                 "eligible" to eligible,
                 "reject_reason" to (rejectReason ?: ""),
-                "confidence" to confidence,  // Phase 1: 파싱 신뢰도
-                "debug_info" to filteredDebugInfo  // Phase 1: 디버깅 정보
+                "confidence" to confidence,
+                "debug_info" to filteredDebugInfo,
+                "call_key" to callKey,
+                "collected_text" to collectedText
             )
         )
     }
@@ -483,10 +537,21 @@ object RemoteLogger {
     }
 
     /**
+     * ADB logcat에 상세 로그 출력
+     */
+    private fun logToAdb(eventType: EventType, detail: Map<String, Any>) {
+        val detailStr = detail.entries.joinToString(", ") { "${it.key}=${it.value}" }
+        Log.i(TAG, "[${eventType.name}] $detailStr")
+    }
+
+    /**
      * 버퍼에 로그 추가 (전송 안 함)
      */
     private fun addToBuffer(eventType: EventType, detail: Map<String, Any>) {
         if (!isEnabled) return
+
+        // ADB logcat에 출력
+        logToAdb(eventType, detail)
 
         synchronized(bufferLock) {
             logBuffer.add(
@@ -759,6 +824,9 @@ object RemoteLogger {
     ) {
         if (!isEnabled) return
         val ctx = context ?: return
+
+        // ADB logcat에 출력
+        logToAdb(eventType, detail)
 
         executor.execute {
             try {

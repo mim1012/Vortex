@@ -26,20 +26,30 @@ import com.example.twinme.util.NotificationHelper
 class CallAcceptedHandler : StateHandler {
     companion object {
         private const val TAG = "CallAcceptedHandler"
+        private const val CONDITION_TAG = "CONDITION"  // ADB 필터용
     }
 
     override val targetState = CallAcceptState.CALL_ACCEPTED
 
     override fun handle(node: AccessibilityNodeInfo, context: StateContext): StateResult {
-        Log.d(TAG, "✅ 콜 수락 완료! → 엔진 일시정지 (pause) + IDLE 전환")
+        Log.i(CONDITION_TAG, "🎉 CALL_ACCEPTED 핸들러 실행 (callKey=${context.eligibleCall?.callKey ?: "null"})")
+        Log.i(CONDITION_TAG, "🎉 → PauseAndTransition(IDLE) 반환 → pause() 호출 예정")
 
         // ⭐ 원본 APK 방식: 알림음 + Toast (MacroEngine.java line 434-440)
         // playSuccessSound() + Toast.makeText(context, "예약 완료", 0).show()
         context.applicationContext?.let { ctx ->
             NotificationHelper.playSuccessSound(ctx)
             NotificationHelper.showToast(ctx, "예약 완료")
-            Log.d(TAG, "성공 알림음 및 Toast 표시 완료")
+            Log.i(CONDITION_TAG, "🎉 알림음 + Toast 표시 완료")
         }
+
+        // ⭐ 서버 로그: 콜 수락 성공
+        com.example.twinme.logging.RemoteLogger.logCallAccepted(
+            callKey = context.eligibleCall?.callKey ?: "unknown",
+            price = context.eligibleCall?.price ?: 0,
+            source = context.eligibleCall?.source ?: "",
+            destination = context.eligibleCall?.destination ?: ""
+        )
 
         // ⭐ 원본 APK 방식: MacroEngine.smali 라인 1347-1378
         // .line 288: invoke-virtual {v0}, Lorg/twinlife/device/android/twinme/MacroEngine;->pause()V
