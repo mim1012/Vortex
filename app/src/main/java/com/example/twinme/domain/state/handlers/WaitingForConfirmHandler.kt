@@ -33,6 +33,12 @@ class WaitingForConfirmHandler : StateHandler {
     // 클릭 후 다이얼로그 대기 상태 추적
     private var clickedAndWaiting = false
     private var waitRetryCount = 0
+    
+    // ⭐ FIX: 버튼 발견 후 렌더링 완료 대기
+    private var buttonFoundCount = 0  // 버튼 발견 횟수 카운터
+    private var clickRetryCount = 0   // 클릭 재시도 카운터
+    private val MIN_BUTTON_FOUND_COUNT = 2  // 최소 2회 연속 발견 후 클릭
+    private val MAX_CLICK_RETRY_COUNT = 3   // 최대 3회 클릭 재시도
 
     override val targetState: CallAcceptState = CallAcceptState.WAITING_FOR_CONFIRM
 
@@ -166,6 +172,8 @@ class WaitingForConfirmHandler : StateHandler {
         }
 
         if (confirmButton == null) {
+            buttonFoundCount = 0  // ⭐ 버튼 못 찾으면 카운터 리셋
+            clickRetryCount = 0
             context.logger.logButtonSearchFailed(
                 currentState = targetState,
                 targetViewId = CONFIRM_BUTTON_ID,
@@ -178,10 +186,21 @@ class WaitingForConfirmHandler : StateHandler {
         // d4 쓰로틀 회피: btn_call_accept면 대기
         val buttonId = confirmButton.viewIdResourceName ?: ""
         if (buttonId.contains("btn_call_accept")) {
+            buttonFoundCount = 0  // ⭐ 리셋
             return StateResult.NoChange
         }
 
-        if (!confirmButton.isClickable) return StateResult.NoChange
+        if (!confirmButton.isClickable) {
+            buttonFoundCount = 0  // ⭐ 리셋
+            return StateResult.NoChange
+        }
+        
+        // ⭐ FIX: 버튼 발견 후 렌더링 완료 대기 (최소 2회 연속 발견)
+        buttonFoundCount++
+        if (buttonFoundCount < MIN_BUTTON_FOUND_COUNT) {
+            Log.d(TAG, "버튼 발견 ($buttonFoundCount/$MIN_BUTTON_FOUND_COUNT) - 렌더링 대기 중")
+            return StateResult.NoChange
+        }
 
         // 클릭 실행
         val clickStartTime = System.currentTimeMillis()
@@ -206,15 +225,27 @@ class WaitingForConfirmHandler : StateHandler {
             callKey = context.eligibleCall?.callKey ?: ""
         )
 
+        // ⭐ FIX: 클릭 실패 시 재시도 로직 추가
         if (!success) {
-            resetState()
-            return StateResult.Error(CallAcceptState.ERROR_UNKNOWN, "확인 버튼 클릭 실패")
+            clickRetryCount++
+            if (clickRetryCount >= MAX_CLICK_RETRY_COUNT) {
+                Log.w(TAG, "확인 버튼 클릭 실패 - 최대 재시도 초과 ($clickRetryCount/$MAX_CLICK_RETRY_COUNT)")
+                resetState()
+                buttonFoundCount = 0
+                clickRetryCount = 0
+                return StateResult.Error(CallAcceptState.ERROR_UNKNOWN, "확인 버튼 클릭 실패")
+            }
+            Log.d(TAG, "확인 버튼 클릭 실패 - 재시도 ($clickRetryCount/$MAX_CLICK_RETRY_COUNT)")
+            buttonFoundCount = 0  // 다시 대기부터 시작
+            return StateResult.NoChange
         }
 
         // ⭐ 클릭 후 즉시 전환하지 말고 대기 상태로
         // 다음 handle()에서 "이미 배차" / "콜이 취소됨" 체크
         clickedAndWaiting = true
         waitRetryCount = 0
+        buttonFoundCount = 0  // ⭐ 리셋
+        clickRetryCount = 0   // ⭐ 리셋
         Log.i(TAG, "🔘 [CONFIRM] btn_positive 클릭 완료 - 응답 대기 시작 (callKey: ${context.eligibleCall?.callKey})")
         return StateResult.NoChange
     }
@@ -225,6 +256,8 @@ class WaitingForConfirmHandler : StateHandler {
     private fun resetState() {
         clickedAndWaiting = false
         waitRetryCount = 0
+        buttonFoundCount = 0  // ⭐ 추가
+        clickRetryCount = 0   // ⭐ 추가
     }
 
     /**
