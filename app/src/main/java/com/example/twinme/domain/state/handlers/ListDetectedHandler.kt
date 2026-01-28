@@ -31,6 +31,11 @@ class ListDetectedHandler @Inject constructor(
     override val targetState = CallAcceptState.LIST_DETECTED
 
     override fun handle(node: AccessibilityNodeInfo, context: StateContext): StateResult {
+        // ⭐ FIX: LIST_DETECTED 진입 시 이전 콜 정보 초기화
+        // "이미 배차" 또는 "콜 취소" 후 리스트로 복귀했을 때,
+        // 캐시된 eligibleCall을 재사용하지 않도록 명시적으로 null 할당
+        context.eligibleCall = null
+        
         // 1. 화면 감지: "예약콜 리스트" 텍스트 확인
         val listNodes = node.findAccessibilityNodeInfosByText("예약콜 리스트")
         val hasListScreen = listNodes.isNotEmpty()
