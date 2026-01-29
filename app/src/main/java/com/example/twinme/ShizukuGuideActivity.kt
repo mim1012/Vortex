@@ -9,12 +9,14 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.example.twinme.utils.ShizukuStatusChecker
+import com.example.twinme.utils.SystemServiceInstaller
 import rikka.shizuku.Shizuku
 
 /**
- * Shizuku 설정 가이드 액티비티
+ * 시스템 서비스 설정 가이드 액티비티
  * 
- * 사용자에게 Shizuku 설치, 활성화, 권한 부여 과정을 안내합니다.
+ * 사용자에게 시스템 서비스(Shizuku) 설치, 활성화, 권한 부여 과정을 안내합니다.
+ * "Shizuku" 용어 대신 "시스템 서비스"로 표현하여 정체를 숨깁니다.
  */
 class ShizukuGuideActivity : AppCompatActivity() {
 
@@ -22,8 +24,8 @@ class ShizukuGuideActivity : AppCompatActivity() {
         private const val TAG = "ShizukuGuideActivity"
         private const val REQUEST_CODE_PERMISSION = 1001
         private const val SHIZUKU_PACKAGE = "moe.shizuku.privileged.api"
-        private const val PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=$SHIZUKU_PACKAGE"
-        private const val GITHUB_URL = "https://github.com/RikkaApps/Shizuku/releases"
+        // 사용자에게는 "시스템 서비스"로 표현
+        private const val SERVICE_NAME = "시스템 서비스"
     }
 
     // UI 요소
@@ -31,8 +33,7 @@ class ShizukuGuideActivity : AppCompatActivity() {
     private lateinit var tvShizukuRunning: TextView
     private lateinit var tvShizukuPermission: TextView
     private lateinit var btnRefreshStatus: Button
-    private lateinit var btnDownloadShizuku: Button
-    private lateinit var btnDownloadGithub: Button
+    private lateinit var btnInstallService: Button
     private lateinit var btnOpenShizuku: Button
     private lateinit var btnRequestPermission: Button
     private lateinit var btnComplete: Button
@@ -42,10 +43,10 @@ class ShizukuGuideActivity : AppCompatActivity() {
         Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
             if (requestCode == REQUEST_CODE_PERMISSION) {
                 if (grantResult == PackageManager.PERMISSION_GRANTED) {
-                    Toast.makeText(this, "✅ Shizuku 권한이 부여되었습니다", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "✅ $SERVICE_NAME 권한이 부여되었습니다", Toast.LENGTH_SHORT).show()
                     updateStatus()
                 } else {
-                    Toast.makeText(this, "❌ Shizuku 권한이 거부되었습니다", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "❌ $SERVICE_NAME 권한이 거부되었습니다", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -87,8 +88,7 @@ class ShizukuGuideActivity : AppCompatActivity() {
         tvShizukuRunning = findViewById(R.id.tv_shizuku_running)
         tvShizukuPermission = findViewById(R.id.tv_shizuku_permission)
         btnRefreshStatus = findViewById(R.id.btn_refresh_status)
-        btnDownloadShizuku = findViewById(R.id.btn_download_shizuku)
-        btnDownloadGithub = findViewById(R.id.btn_download_github)
+        btnInstallService = findViewById(R.id.btn_download_shizuku)
         btnOpenShizuku = findViewById(R.id.btn_open_shizuku)
         btnRequestPermission = findViewById(R.id.btn_request_permission)
         btnComplete = findViewById(R.id.btn_complete)
@@ -104,19 +104,14 @@ class ShizukuGuideActivity : AppCompatActivity() {
             Toast.makeText(this, "상태를 업데이트했습니다", Toast.LENGTH_SHORT).show()
         }
 
-        // Google Play에서 Shizuku 다운로드
-        btnDownloadShizuku.setOnClickListener {
-            openUrl(PLAY_STORE_URL)
+        // 시스템 서비스 설치
+        btnInstallService.setOnClickListener {
+            installSystemService()
         }
 
-        // GitHub에서 Shizuku 다운로드
-        btnDownloadGithub.setOnClickListener {
-            openUrl(GITHUB_URL)
-        }
-
-        // Shizuku 앱 열기
+        // 시스템 서비스 앱 열기
         btnOpenShizuku.setOnClickListener {
-            openShizukuApp()
+            openSystemServiceApp()
         }
 
         // 권한 요청
@@ -131,17 +126,17 @@ class ShizukuGuideActivity : AppCompatActivity() {
     }
 
     /**
-     * Shizuku 상태 업데이트
+     * 시스템 서비스 상태 업데이트
      */
     private fun updateStatus() {
-        // 1. Shizuku 설치 여부
-        val isInstalled = isShizukuInstalled()
+        // 1. 시스템 서비스 설치 여부
+        val isInstalled = SystemServiceInstaller.isSystemServiceInstalled(this)
         tvShizukuInstalled.text = if (isInstalled) "✅ 설치됨" else "❌ 미설치"
         tvShizukuInstalled.setTextColor(
             getColor(if (isInstalled) android.R.color.holo_green_dark else android.R.color.holo_red_dark)
         )
 
-        // 2. Shizuku 실행 여부
+        // 2. 시스템 서비스 실행 여부
         val isRunning = ShizukuStatusChecker.isShizukuAvailable()
         tvShizukuRunning.text = if (isRunning) "✅ 실행 중" else "❌ 정지됨"
         tvShizukuRunning.setTextColor(
@@ -156,58 +151,49 @@ class ShizukuGuideActivity : AppCompatActivity() {
         )
 
         // 버튼 활성화 상태 업데이트
+        btnInstallService.isEnabled = !isInstalled
         btnOpenShizuku.isEnabled = isInstalled
         btnRequestPermission.isEnabled = isRunning && !hasPermission
         btnComplete.isEnabled = isInstalled && isRunning && hasPermission
     }
 
     /**
-     * Shizuku 설치 여부 확인
+     * 시스템 서비스 설치
      */
-    private fun isShizukuInstalled(): Boolean {
-        return try {
-            packageManager.getPackageInfo(SHIZUKU_PACKAGE, 0)
-            true
-        } catch (e: PackageManager.NameNotFoundException) {
-            false
+    private fun installSystemService() {
+        val success = SystemServiceInstaller.startInstallation(this)
+        if (success) {
+            Toast.makeText(
+                this,
+                "$SERVICE_NAME 설치를 시작합니다\n설치 후 활성화해주세요",
+                Toast.LENGTH_LONG
+            ).show()
+        } else {
+            Toast.makeText(
+                this,
+                "$SERVICE_NAME 설치 실패\n다시 시도해주세요",
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
 
     /**
-     * URL 열기
+     * 시스템 서비스 앱 열기
      */
-    private fun openUrl(url: String) {
-        try {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-            startActivity(intent)
-        } catch (e: Exception) {
-            Toast.makeText(this, "브라우저를 열 수 없습니다", Toast.LENGTH_SHORT).show()
+    private fun openSystemServiceApp() {
+        val success = SystemServiceInstaller.launchSystemService(this)
+        if (!success) {
+            Toast.makeText(this, "$SERVICE_NAME 앱을 열 수 없습니다", Toast.LENGTH_SHORT).show()
         }
     }
 
     /**
-     * Shizuku 앱 열기
-     */
-    private fun openShizukuApp() {
-        try {
-            val intent = packageManager.getLaunchIntentForPackage(SHIZUKU_PACKAGE)
-            if (intent != null) {
-                startActivity(intent)
-            } else {
-                Toast.makeText(this, "Shizuku 앱을 찾을 수 없습니다", Toast.LENGTH_SHORT).show()
-            }
-        } catch (e: Exception) {
-            Toast.makeText(this, "Shizuku 앱을 열 수 없습니다", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    /**
-     * Shizuku 권한 요청
+     * 시스템 서비스 권한 요청
      */
     private fun requestShizukuPermission() {
         try {
             if (Shizuku.isPreV11()) {
-                Toast.makeText(this, "Shizuku 버전이 너무 낮습니다. 업데이트해주세요.", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "$SERVICE_NAME 버전이 너무 낮습니다. 업데이트해주세요.", Toast.LENGTH_LONG).show()
                 return
             }
 
@@ -220,10 +206,10 @@ class ShizukuGuideActivity : AppCompatActivity() {
             if (Shizuku.shouldShowRequestPermissionRationale()) {
                 Toast.makeText(
                     this,
-                    "Shizuku 앱에서 직접 권한을 부여해주세요",
+                    "$SERVICE_NAME 앱에서 직접 권한을 부여해주세요",
                     Toast.LENGTH_LONG
                 ).show()
-                openShizukuApp()
+                openSystemServiceApp()
                 return
             }
 

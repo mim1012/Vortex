@@ -5,12 +5,12 @@
 ![Kotlin](https://img.shields.io/badge/Kotlin-1.8-purple)
 ![License](https://img.shields.io/badge/license-MIT-orange)
 
-Vortex는 카카오 택시 드라이버 앱의 예약 콜을 자동으로 수락하는 Android 애플리케이션입니다. Shizuku API를 활용하여 시스템 레벨의 터치 입력을 구현하였습니다.
+Vortex는 카카오 택시 드라이버 앱의 예약 콜을 자동으로 수락하는 Android 애플리케이션입니다. 시스템 레벨 API를 활용하여 안정적인 터치 입력을 구현하였습니다.
 
 ## 주요 기능
 
 - ✅ **자동 콜 수락**: 예약 콜 감지 및 자동 수락
-- ✅ **시스템 레벨 입력**: Shizuku를 통한 봇 탐지 우회
+- ✅ **시스템 레벨 입력**: 시스템 서비스를 통한 봇 탐지 우회
 - ✅ **접근성 서비스**: 화면 상태 실시간 모니터링
 - ✅ **필터링 기능**: 시간대, 거리, 금액 등 조건 설정
 - ✅ **상태 추적**: 실시간 엔진 상태 표시
@@ -18,27 +18,24 @@ Vortex는 카카오 택시 드라이버 앱의 예약 콜을 자동으로 수락
 ## 시스템 요구사항
 
 - **Android 버전**: 7.0 (Nougat) 이상
-- **필수 앱**: [Shizuku](https://github.com/RikkaApps/Shizuku) 13.0 이상
+- **필수 구성요소**: 시스템 서비스 (앱 내 자동 설치)
 - **권장 환경**: Android 11 이상 (무선 디버깅 지원)
 
 ## 설치 방법
 
-### 1. Shizuku 설치 및 활성화
+### 1. 시스템 서비스 설치 및 활성화
 
-Vortex를 사용하기 위해서는 먼저 Shizuku를 설치하고 활성화해야 합니다.
+Vortex를 사용하기 위해서는 먼저 시스템 서비스를 설치하고 활성화해야 합니다.
 
-#### Shizuku 다운로드
+#### 시스템 서비스 설치
 
-다음 중 하나의 방법으로 Shizuku를 설치하세요:
+Vortex 앱을 처음 실행하면 시스템 서비스 설치 가이드가 표시됩니다. "시스템 서비스 설치" 버튼을 클릭하여 자동으로 설치하세요.
 
-- **Google Play Store**: [Shizuku 다운로드](https://play.google.com/store/apps/details?id=moe.shizuku.privileged.api)
-- **GitHub Releases**: [최신 릴리즈](https://github.com/RikkaApps/Shizuku/releases)
-
-#### Shizuku 활성화 방법
+#### 시스템 서비스 활성화 방법
 
 **방법 1: 루팅된 기기 (가장 간단)**
 
-1. Shizuku 앱 실행
+1. 시스템 서비스 앱 실행
 2. "시작" 버튼 클릭
 3. Root 권한 요청 승인
 
@@ -51,7 +48,7 @@ Vortex를 사용하기 위해서는 먼저 Shizuku를 설치하고 활성화해�
    - 설정 → 개발자 옵션 → 무선 디버깅 활성화
 
 3. **Shizuku 실행**
-   - Shizuku 앱 실행
+   - 시스템 서비스 앱 실행
    - "무선 디버깅을 통해 시작" 선택
    - 화면 안내에 따라 페어링 진행
 
@@ -68,19 +65,19 @@ Vortex를 사용하기 위해서는 먼저 Shizuku를 설치하고 활성화해�
    adb devices
    ```
 
-4. **Shizuku 서버 시작**
+4. **시스템 서비스 서버 시작**
    ```bash
    adb shell sh /storage/emulated/0/Android/data/moe.shizuku.privileged.api/start.sh
    ```
 
-5. **Shizuku 앱에서 확인**
-   - "Shizuku가 실행 중입니다" 메시지 확인
+5. **시스템 서비스 앱에서 확인**
+   - "시스템 서비스가 실행 중입니다" 메시지 확인
 
 ### 2. Vortex 설치
 
 1. [Releases](https://github.com/mim1012/Vortex/releases) 페이지에서 최신 APK 다운로드
 2. APK 파일 실행 및 설치
-3. 앱 실행 시 Shizuku 권한 요청 승인
+3. 앱 실행 시 시스템 서비스 권한 요청 승인
 
 ### 3. 권한 설정
 
@@ -92,7 +89,7 @@ Vortex가 정상적으로 작동하려면 다음 권한이 필요합니다:
 2. **다른 앱 위에 표시**
    - 설정 → 앱 → Vortex → 다른 앱 위에 표시 허용
 
-3. **Shizuku 권한**
+3. **시스템 서비스 권한**
    - Vortex 실행 시 자동으로 요청됨
 
 4. **배터리 최적화 제외** (권장)

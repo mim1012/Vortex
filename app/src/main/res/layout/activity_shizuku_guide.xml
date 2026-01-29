@@ -16,7 +16,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Shizuku 설정 가이드"
+            android:text="시스템 서비스 설정 가이드"
             android:textSize="28sp"
             android:textStyle="bold"
             android:textColor="?android:attr/textColorPrimary"
@@ -25,7 +25,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Vortex를 사용하려면 Shizuku가 필요합니다"
+            android:text="Vortex를 사용하려면 시스템 서비스가 필요합니다"
             android:textSize="14sp"
             android:textColor="?android:attr/textColorSecondary"
             android:layout_marginBottom="24dp" />
@@ -147,7 +147,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="1️⃣ Shizuku 설치"
+                    android:text="1️⃣ 시스템 서비스 설치"
                     android:textSize="18sp"
                     android:textStyle="bold"
                     android:layout_marginBottom="8dp" />
@@ -155,7 +155,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Shizuku 앱을 다운로드하여 설치하세요."
+                    android:text="시스템 서비스를 설치하세요."
                     android:textSize="14sp"
                     android:textColor="?android:attr/textColorSecondary"
                     android:layout_marginBottom="12dp" />
@@ -164,7 +164,7 @@
                     android:id="@+id/btn_download_shizuku"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Google Play에서 다운로드"
+                    android:text="시스템 서비스 설치"
                     style="@style/Widget.Material3.Button" />
 
                 <Button
@@ -194,7 +194,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="2️⃣ Shizuku 활성화"
+                    android:text="2️⃣ 시스템 서비스 활성화"
                     android:textSize="18sp"
                     android:textStyle="bold"
                     android:layout_marginBottom="8dp" />
@@ -218,7 +218,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="1. 설정 → 개발자 옵션 → 무선 디버깅 활성화\n2. Shizuku 앱 실행\n3. '무선 디버깅을 통해 시작' 선택"
+                    android:text="1. 설정 → 개발자 옵션 → 무선 디버깅 활성화\n2. 시스템 서비스 앱 실행\n3. '무선 디버깅을 통해 시작' 선택"
                     android:textSize="13sp"
                     android:textColor="?android:attr/textColorSecondary"
                     android:layout_marginBottom="12dp"
@@ -235,7 +235,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="1. PC에 ADB 설치\n2. USB 디버깅 활성화\n3. 케이블로 PC 연결\n4. Shizuku 앱에서 안내 따르기"
+                    android:text="1. PC에 ADB 설치\n2. USB 디버깅 활성화\n3. 케이블로 PC 연결\n4. 시스템 서비스 앱에서 안내 따르기"
                     android:textSize="13sp"
                     android:textColor="?android:attr/textColorSecondary"
                     android:layout_marginBottom="12dp"
@@ -252,7 +252,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Shizuku 앱 실행 → '시작' 버튼 클릭"
+                    android:text="시스템 서비스 앱 실행 → '시작' 버튼 클릭"
                     android:textSize="13sp"
                     android:textColor="?android:attr/textColorSecondary"
                     android:layout_marginBottom="12dp" />
@@ -261,7 +261,7 @@
                     android:id="@+id/btn_open_shizuku"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Shizuku 앱 열기"
+                    android:text="시스템 서비스 열기"
                     style="@style/Widget.Material3.Button" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
