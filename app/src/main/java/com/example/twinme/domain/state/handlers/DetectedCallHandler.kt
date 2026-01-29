@@ -31,7 +31,7 @@ class DetectedCallHandler : StateHandler {
         private val FALLBACK_TEXTS = listOf("수락", "직접결제 수락", "자동결제 수락", "콜 수락")  // Media_enhanced 방식
         private val CONFIRM_TEXTS = listOf("수락하기")  // 확인 다이얼로그 텍스트
         private val DETAIL_SCREEN_TEXTS = listOf("예약콜 상세", "예약콜", "출발지", "도착지")
-        private const val MAX_CLICK_RETRY = 5  // 최대 클릭 재시도 횟수
+        private const val MAX_CLICK_RETRY = 300  // 300 × 10ms = 3초 대기 (모달 감지용)
     }
 
     // 클릭 후 다이얼로그 대기 상태 추적
@@ -43,15 +43,15 @@ class DetectedCallHandler : StateHandler {
     override fun handle(node: AccessibilityNodeInfo, context: StateContext): StateResult {
         // ⭐ 클릭 후 대기 중 처리 (원본 APK ACCEPTING_CALL 방식)
         if (clickedAndWaiting) {
-            // 1. "수락하기" 다이얼로그 확인
-            if (checkConfirmDialogVisible(node)) {
+            // 1. "수락하기" 다이얼로그 확인 (에러 다이얼로그 제외)
+            if (checkConfirmDialogVisible(node, context)) {
                 resetState()
                 return StateResult.Transition(CallAcceptState.WAITING_FOR_CONFIRM, "다이얼로그 감지")
             }
 
-            // 2. "이미 배차" 확인 → 다이얼로그 확인 버튼 클릭
-            if (node.findAccessibilityNodeInfosByText("이미 배차").isNotEmpty()) {
-                Log.d(TAG, "이미 배차 다이얼로그 감지 - 확인 버튼 클릭 시도")
+            // 2. "이미 배차" 확인 → 다이얼로그 확인 버튼 클릭 (fresh node 사용)
+            if (context.hasFreshText("이미 배차")) {
+                Log.d(TAG, "이미 배차 다이얼로그 감지 (fresh node) - 확인 버튼 클릭 시도")
                 com.example.twinme.logging.RemoteLogger.logError(
                     errorType = "DIALOG_ASSIGNED",
                     message = "이미 배차 다이얼로그 감지 (클릭 후 대기 중)",
@@ -72,9 +72,9 @@ class DetectedCallHandler : StateHandler {
                 return StateResult.NoChange
             }
 
-            // 3. "콜이 취소되었습니다" 확인 → 다이얼로그 확인 버튼 클릭
-            if (node.findAccessibilityNodeInfosByText("콜이 취소되었습니다").isNotEmpty()) {
-                Log.d(TAG, "콜 취소 다이얼로그 감지 - 확인 버튼 클릭 시도")
+            // 3. "콜이 취소되었습니다" 확인 → 다이얼로그 확인 버튼 클릭 (fresh node 사용)
+            if (context.hasFreshText("콜이 취소")) {
+                Log.d(TAG, "콜 취소 다이얼로그 감지 (fresh node) - 확인 버튼 클릭 시도")
                 com.example.twinme.logging.RemoteLogger.logError(
                     errorType = "DIALOG_CANCELLED",
                     message = "콜 취소 다이얼로그 감지 (클릭 후 대기 중)",
@@ -97,8 +97,11 @@ class DetectedCallHandler : StateHandler {
 
             // 4. 재시도 카운트 증가
             waitRetryCount++
+            val elapsedSec = waitRetryCount * 10 / 1000.0
+            Log.i("CONDITION", "⏳ [DETECTED] 다이얼로그 대기 중 waitRetryCount=$waitRetryCount (${elapsedSec}초/3초)")
+
             if (waitRetryCount >= MAX_CLICK_RETRY) {
-                Log.w(TAG, "클릭 후 응답 없음 - 타임아웃 ($waitRetryCount/$MAX_CLICK_RETRY)")
+                Log.w("CONDITION", "⏳ [DETECTED] 클릭 후 응답 없음 - 타임아웃 ($waitRetryCount/$MAX_CLICK_RETRY)")
                 resetState()
                 context.eligibleCall = null
                 return StateResult.Error(CallAcceptState.ERROR_TIMEOUT, "클릭 후 응답 없음")
@@ -108,8 +111,8 @@ class DetectedCallHandler : StateHandler {
             return StateResult.NoChange
         }
 
-        // 0. 확인 다이얼로그 감지 (클릭 전에도 체크)
-        if (checkConfirmDialogVisible(node)) {
+        // 0. 확인 다이얼로그 감지 (클릭 전에도 체크, 에러 다이얼로그 제외)
+        if (checkConfirmDialogVisible(node, context)) {
             resetState()
             return StateResult.Transition(CallAcceptState.WAITING_FOR_CONFIRM, "다이얼로그 감지")
         }
@@ -255,14 +258,27 @@ class DetectedCallHandler : StateHandler {
         // 다음 handle() 호출에서 "수락하기" / "이미 배차" / "콜이 취소됨" 확인
         clickedAndWaiting = true
         waitRetryCount = 0
-        Log.d(TAG, "콜 수락 버튼 클릭 완료 - 응답 대기 시작")
+        Log.i("CONDITION", "🔘 [DETECTED] btn_call_accept 클릭 완료 - 다이얼로그 대기 시작 (callKey: ${context.eligibleCall?.callKey})")
         return StateResult.NoChange
     }
 
     /**
      * 확인 다이얼로그(수락하기 버튼)가 보이는지 확인
+     * ⭐ 에러 다이얼로그면 false 반환 (fresh node로 체크)
      */
-    private fun checkConfirmDialogVisible(node: AccessibilityNodeInfo): Boolean {
+    private fun checkConfirmDialogVisible(node: AccessibilityNodeInfo, context: StateContext? = null): Boolean {
+        // ⭐ 에러 다이얼로그가 떠 있으면 false (fresh node로 체크)
+        val service = com.example.twinme.service.CallAcceptAccessibilityService.instance
+        val freshNode = service?.rootInActiveWindow
+        if (freshNode?.findAccessibilityNodeInfosByText("이미 배차")?.isNotEmpty() == true) {
+            Log.d(TAG, "checkConfirmDialogVisible: 이미 배차 다이얼로그 감지 → false")
+            return false
+        }
+        if (freshNode?.findAccessibilityNodeInfosByText("콜이 취소")?.isNotEmpty() == true) {
+            Log.d(TAG, "checkConfirmDialogVisible: 콜 취소 다이얼로그 감지 → false")
+            return false
+        }
+
         // View ID로 확인
         if (findNodeByViewId(node, CONFIRM_BUTTON_ID) != null) return true
 

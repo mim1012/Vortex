@@ -301,7 +301,7 @@ class CallAcceptEngineImpl @Inject constructor(
 
         // 2-2. 여전히 null이면 재시도
         if (rootNode == null) {
-            Log.v(TAG, "rootNode 없음 - 100ms 후 재시도")
+            Log.i("CONDITION", "⚠️ rootNode 없음 - 100ms 후 재시도 (state=${_currentState.value})")
             scheduleNext(100L) { startMacroLoop() }
             return
         }
@@ -309,7 +309,7 @@ class CallAcceptEngineImpl @Inject constructor(
         // 2-3. ⭐ 패키지명 검증 (보안)
         val currentPackage = rootNode.packageName?.toString()
         if (currentPackage != "com.kakao.taxi.driver") {
-            Log.w(TAG, "⚠️ 다른 앱이 포그라운드: $currentPackage - 100ms 후 재시도")
+            Log.i("CONDITION", "⚠️ 다른 앱이 포그라운드: $currentPackage (state=${_currentState.value}) - 100ms 후 재시도")
             cachedRootNode = null  // 캐시 무효화
             scheduleNext(100L) { startMacroLoop() }
             return
@@ -336,6 +336,7 @@ class CallAcceptEngineImpl @Inject constructor(
             500L
         } else {
             // 5. 상태 머신 한 번 실행 (원본 라인 2486-2523)
+            Log.v("CONDITION", "▶️ executeStateMachineOnce 실행 (state=${_currentState.value})")
             executeStateMachineOnce(rootNode)
         }
 
@@ -636,7 +637,7 @@ class CallAcceptEngineImpl @Inject constructor(
             CallAcceptState.ANALYZING -> 30L                 // 원본: 30ms
             CallAcceptState.CLICKING_ITEM -> 10L             // 원본: 10ms
             CallAcceptState.DETECTED_CALL -> 10L             // 원본: 10ms (WAITING_FOR_ACCEPT)
-            CallAcceptState.WAITING_FOR_CONFIRM -> 10L       // 원본: 10ms
+            CallAcceptState.WAITING_FOR_CONFIRM -> 100L      // 100ms 간격
             CallAcceptState.CALL_ACCEPTED -> 500L            // 원본: 500ms (SUCCESS)
             CallAcceptState.TIMEOUT_RECOVERY -> 500L         // 원본: 500ms
             CallAcceptState.ERROR_ASSIGNED -> 100L           // 원본: 100ms (FAILED_ASSIGNED)
@@ -739,7 +740,11 @@ class CallAcceptEngineImpl @Inject constructor(
             else -> TIMEOUT_MS  // 3초
         }
 
+        Log.i("CONDITION", "⏱️ startTimeout: state=${_currentState.value}, timeout=${timeout}ms")
+
         timeoutRunnable = Runnable {
+            Log.i("CONDITION", "⏱️ TIMEOUT 발생! state=${_currentState.value}, after=${timeout}ms")
+
             // ⭐ Phase 5: 타임아웃 컨텍스트 로그 추가
             logger.logTimeoutContext(
                 state = _currentState.value,
@@ -755,6 +760,9 @@ class CallAcceptEngineImpl @Inject constructor(
     }
 
     private fun resetTimeout() {
+        if (timeoutRunnable != null) {
+            Log.v("CONDITION", "⏱️ resetTimeout: 기존 타임아웃 취소 (state=${_currentState.value})")
+        }
         timeoutRunnable?.let { handler.removeCallbacks(it) }
         timeoutRunnable = null
     }
