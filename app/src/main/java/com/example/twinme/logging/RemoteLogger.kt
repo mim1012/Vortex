@@ -282,6 +282,31 @@ object RemoteLogger {
         )
     }
 
+    // ============ 조건 비교 진단 로깅 (즉시 전송) ============
+
+    /**
+     * ANALYZING 상태에서 파싱된 콜과 설정값을 비교한 결과를 즉시 전송
+     * 버퍼가 아닌 sendLog로 즉시 전송하여 세션 리셋에 영향받지 않음
+     */
+    fun logAnalyzingDiagnosis(
+        callCount: Int,
+        calls: List<Map<String, Any>>,
+        settings: Map<String, Any>,
+        result: String
+    ) {
+        sendLog(
+            eventType = EventType.STATE_CHANGE,
+            detail = mapOf(
+                "event" to "ANALYZING_DIAGNOSIS",
+                "call_count" to callCount,
+                "calls" to calls,
+                "filter_settings" to settings,
+                "result" to result,
+                "timestamp" to System.currentTimeMillis()
+            )
+        )
+    }
+
     // ============ 에러 로깅 ============
 
     fun logError(

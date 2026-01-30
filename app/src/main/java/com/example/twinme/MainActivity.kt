@@ -114,6 +114,11 @@ class MainActivity : AppCompatActivity() {
         loadSettings()
         setupListeners()
 
+        // 시스템 서비스(Shizuku) 미설치 시 가이드 화면으로 이동
+        if (com.example.twinme.utils.SystemServiceInstaller.needsInstallation(this)) {
+            startActivity(Intent(this, ShizukuGuideActivity::class.java))
+        }
+
         // 전화번호 권한 확인 후 인증 진행
         checkPhonePermissionAndAuthenticate()
     }

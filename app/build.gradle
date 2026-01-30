@@ -10,6 +10,10 @@ android {
     namespace "com.example.twinme"
     compileSdk 34
 
+    aaptOptions {
+        noCompress "apk"
+    }
+
     defaultConfig {
         applicationId "com.example.twinme"
         minSdk 24

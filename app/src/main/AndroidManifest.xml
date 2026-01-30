@@ -35,6 +35,10 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".ShizukuGuideActivity"
+            android:exported="false" />
+
         <service
             android:name=".service.CallAcceptAccessibilityService"
             android:enabled="true"

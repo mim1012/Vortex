@@ -63,7 +63,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Shizuku 설치"
+                        android:text="서비스 설치"
                         android:textSize="14sp" />
 
                     <TextView
@@ -86,7 +86,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Shizuku 실행"
+                        android:text="서비스 실행"
                         android:textSize="14sp" />
 
                     <TextView
@@ -167,13 +167,6 @@
                     android:text="시스템 서비스 설치"
                     style="@style/Widget.Material3.Button" />
 
-                <Button
-                    android:id="@+id/btn_download_github"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="GitHub에서 다운로드"
-                    android:layout_marginTop="8dp"
-                    style="@style/Widget.Material3.Button.OutlinedButton" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -291,7 +284,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Vortex가 Shizuku를 사용할 수 있도록 권한을 부여하세요."
+                    android:text="Vortex가 시스템 서비스를 사용할 수 있도록 권한을 부여하세요."
                     android:textSize="14sp"
                     android:textColor="?android:attr/textColorSecondary"
                     android:layout_marginBottom="12dp" />
@@ -332,7 +325,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="• Shizuku가 자주 꺼지는 경우: 배터리 최적화에서 Shizuku 제외\n• 재부팅 후: Shizuku를 다시 시작해야 함 (Root 제외)\n• 권한 요청이 안 되는 경우: Shizuku 앱에서 직접 권한 부여"
+                    android:text="• 시스템 서비스가 자주 꺼지는 경우: 배터리 최적화에서 제외\n• 재부팅 후: 시스템 서비스를 다시 시작해야 함 (Root 제외)\n• 권한 요청이 안 되는 경우: 시스템 서비스 앱에서 직접 권한 부여"
                     android:textSize="13sp"
                     android:textColor="#E65100"
                     android:lineSpacingExtra="4dp" />

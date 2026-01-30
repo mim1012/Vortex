@@ -58,6 +58,13 @@ class ClickingItemHandler : StateHandler {
     override val targetState = CallAcceptState.CLICKING_ITEM
 
     override fun handle(node: AccessibilityNodeInfo, context: StateContext): StateResult {
+        // ⭐ 진단: CLICKING_ITEM 진입 로그
+        com.example.twinme.logging.RemoteLogger.logError(
+            errorType = "CLICKING_ITEM_ENTER",
+            message = "eligibleCall=${context.eligibleCall?.callKey ?: "NULL"}, price=${context.eligibleCall?.price ?: 0}",
+            stackTrace = "bounds=${context.eligibleCall?.bounds}, clickableNode=${context.eligibleCall?.clickableNode != null}, retryCount=$retryCount"
+        )
+
         // "이미 배차" 감지 → 다이얼로그 확인 버튼 클릭
         if (node.findAccessibilityNodeInfosByText("이미 배차").isNotEmpty()) {
             Log.d(TAG, "이미 배차 다이얼로그 감지 - 확인 버튼 클릭 시도")

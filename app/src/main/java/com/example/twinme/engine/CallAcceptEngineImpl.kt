@@ -448,8 +448,26 @@ class CallAcceptEngineImpl @Inject constructor(
         // rootNode는 cachedRootNode로 람다에서 자동으로 참조됨
 
         // 핸들러 실행 (try-catch로 크래시 방지)
+        val handlerState = _currentState.value
         try {
-            when (val result = currentHandler.handle(rootNode, stateContext)) {
+            val result = currentHandler.handle(rootNode, stateContext)
+
+            // ⭐ 진단: ANALYZING/CLICKING_ITEM 핸들러 결과를 즉시 전송
+            if (handlerState == CallAcceptState.ANALYZING || handlerState == CallAcceptState.CLICKING_ITEM) {
+                val resultDesc = when (result) {
+                    is StateResult.Transition -> "Transition→${result.nextState}(${result.reason})"
+                    is StateResult.Error -> "Error→${result.errorState}(${result.reason})"
+                    is StateResult.PauseAndTransition -> "PauseAndTransition→${result.nextState}"
+                    StateResult.NoChange -> "NoChange"
+                }
+                com.example.twinme.logging.RemoteLogger.logError(
+                    errorType = "HANDLER_RESULT_${handlerState.name}",
+                    message = "result=$resultDesc, eligibleCall=${stateContext.eligibleCall?.callKey ?: "null"}",
+                    stackTrace = "price=${stateContext.eligibleCall?.price ?: 0}, bounds=${stateContext.eligibleCall?.bounds}"
+                )
+            }
+
+            when (result) {
                 is StateResult.Transition -> {
                     changeState(result.nextState, result.reason)
                 }
