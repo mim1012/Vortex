@@ -288,8 +288,19 @@ class CallAcceptEngineImpl @Inject constructor(
         // 2. rootNode 확인 및 패키지명 검증 (원본 라인 2446)
         var rootNode = cachedRootNode
 
+        // ⭐ 새로고침 후 노드 강제 갱신 (캐시 무시)
+        if (stateContext.forceNodeRefresh) {
+            Log.d(TAG, "🔄 [강제 갱신] rootNode 캐시 무시 - 최신 노드 강제 획득")
+            val service = com.example.twinme.service.CallAcceptAccessibilityService.instance
+            rootNode = service?.rootInActiveWindow
+            if (rootNode != null) {
+                cachedRootNode = rootNode
+                Log.i(TAG, "✅ [강제 갱신] 노드 갱신 완료")
+            }
+            stateContext.forceNodeRefresh = false  // 플래그 리셋
+        }
         // 2-1. 캐시 없으면 직접 가져오기
-        if (rootNode == null) {
+        else if (rootNode == null) {
             val service = com.example.twinme.service.CallAcceptAccessibilityService.instance
             rootNode = service?.rootInActiveWindow
 
