@@ -169,7 +169,6 @@ class CallAcceptEngineImpl @Inject constructor(
         _isRunning.value = true
         _isPaused.value = false  // pause 상태 초기화
         stateContext.eligibleCall = null  // 이전 콜 정보 초기화
-        stateContext.pauseOnFail = settingsManager.pauseOnFail  // 이미배차/콜취소 시 동작 모드
 
         changeState(CallAcceptState.WAITING_FOR_CALL, "엔진 시작됨")
 
