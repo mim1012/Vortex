@@ -96,8 +96,6 @@ class CallAcceptEngineImpl @Inject constructor(
      */
     private var lastRefreshTime = 0L
 
-
-
     /**
      * StateContext - 상태 핸들러 간 데이터 공유
      * ⭐ 필드로 유지하여 eligibleCall 값이 상태 전환 시에도 유지되도록 함
@@ -125,10 +123,14 @@ class CallAcceptEngineImpl @Inject constructor(
         StateContext(
             applicationContext = context,
             findNode = { _, viewId ->
-                com.example.twinme.service.CallAcceptAccessibilityService.instance?.rootInActiveWindow?.let { findNodeByViewId(it, viewId) }
+                // ⭐ 매번 fresh node 사용 - stale 데이터 문제 방지
+                val service = com.example.twinme.service.CallAcceptAccessibilityService.instance
+                service?.rootInActiveWindow?.let { findNodeByViewId(it, viewId) }
             },
             findNodeByText = { _, text ->
-                com.example.twinme.service.CallAcceptAccessibilityService.instance?.rootInActiveWindow?.let { findNodeByText(it, text) }
+                // ⭐ 매번 fresh node 사용 - stale 데이터 문제 방지
+                val service = com.example.twinme.service.CallAcceptAccessibilityService.instance
+                service?.rootInActiveWindow?.let { findNodeByText(it, text) }
             },
             logger = logger,
             filterSettings = filterSettings,
@@ -167,7 +169,6 @@ class CallAcceptEngineImpl @Inject constructor(
         _isRunning.value = true
         _isPaused.value = false  // pause 상태 초기화
         stateContext.eligibleCall = null  // 이전 콜 정보 초기화
-        cachedRootNode = null  // ⭐ rootNode 캐시 초기화 (신선한 노드 사용)
 
         changeState(CallAcceptState.WAITING_FOR_CALL, "엔진 시작됨")
 
@@ -228,11 +229,10 @@ class CallAcceptEngineImpl @Inject constructor(
 
     /**
      * AccessibilityService로부터 rootNode 수신
-     * 메인 루프에서 사용할 rootNode를 캐시에 저장
+     * ⭐ 캐시 제거: 매번 fresh node를 직접 가져오므로 이 메서드는 사용하지 않음
      */
     override fun processNode(node: AccessibilityNodeInfo) {
-        // 노드 캐싱 제거: 매번 getRootInActiveWindow()로 fresh node 가져오도록 수정
-        // 이 메서드는 더 이상 사용되지 않음
+        // No-op: 캐시 사용하지 않음
     }
 
     /**
@@ -250,9 +250,6 @@ class CallAcceptEngineImpl @Inject constructor(
         // 패키지 확인
         val currentPackage = node.packageName?.toString()
         if (currentPackage != "com.kakao.taxi.driver") return
-
-        // 캐시 업데이트
-        cachedRootNode = node
 
         // ⭐ 상태 머신 즉시 실행 (딜레이 없음)
         executeStateMachineOnce(node)
@@ -281,43 +278,21 @@ class CallAcceptEngineImpl @Inject constructor(
             return
         }
 
-        // 2. rootNode 확인 및 패키지명 검증 (원본 라인 2446)
-        var rootNode = cachedRootNode
+        // 2. ⭐ 매번 fresh rootNode 가져오기 (stale 데이터 문제 방지)
+        val service = com.example.twinme.service.CallAcceptAccessibilityService.instance
+        val rootNode = service?.rootInActiveWindow
 
-        // ⭐ 새로고침 후 노드 강제 갱신 (캐시 무시)
-        if (stateContext.forceNodeRefresh) {
-            Log.d(TAG, "🔄 [강제 갱신] rootNode 캐시 무시 - 최신 노드 강제 획득")
-            val service = com.example.twinme.service.CallAcceptAccessibilityService.instance
-            rootNode = service?.rootInActiveWindow
-            if (rootNode != null) {
-                cachedRootNode = rootNode
-                Log.i(TAG, "✅ [강제 갱신] 노드 갱신 완료")
-            }
-            stateContext.forceNodeRefresh = false  // 플래그 리셋
-        }
-        // 2-1. 캐시 없으면 직접 가져오기
-        else if (rootNode == null) {
-            val service = com.example.twinme.service.CallAcceptAccessibilityService.instance
-            rootNode = service?.rootInActiveWindow
-
-            if (rootNode != null) {
-                cachedRootNode = rootNode
-                Log.v(TAG, "rootNode 직접 획득")
-            }
-        }
-
-        // 2-2. 여전히 null이면 재시도
+        // 2-1. rootNode가 null이면 재시도
         if (rootNode == null) {
             Log.i("CONDITION", "⚠️ rootNode 없음 - 100ms 후 재시도 (state=${_currentState.value})")
             scheduleNext(100L) { startMacroLoop() }
             return
         }
 
-        // 2-3. ⭐ 패키지명 검증 (보안)
+        // 2-2. ⭐ 패키지명 검증 (보안)
         val currentPackage = rootNode.packageName?.toString()
         if (currentPackage != "com.kakao.taxi.driver") {
             Log.i("CONDITION", "⚠️ 다른 앱이 포그라운드: $currentPackage (state=${_currentState.value}) - 100ms 후 재시도")
-            cachedRootNode = null  // 캐시 무효화
             scheduleNext(100L) { startMacroLoop() }
             return
         }
@@ -362,10 +337,6 @@ class CallAcceptEngineImpl @Inject constructor(
             Log.w(TAG, "Invalid node detected - skipping")
             return 500L
         }
-
-        // ⭐⭐⭐ 제일 중요! cachedRootNode 갱신
-        // StateContext의 람다가 최신 rootNode를 참조하도록 보장
-        cachedRootNode = rootNode
 
         val currentTime = System.currentTimeMillis()
 
@@ -452,7 +423,7 @@ class CallAcceptEngineImpl @Inject constructor(
         }
 
         // ⭐ StateContext는 필드로 유지되므로 eligibleCall 값이 보존됨
-        // rootNode는 cachedRootNode로 람다에서 자동으로 참조됨
+        // StateContext의 findNode/findNodeByText 람다는 매번 fresh node를 가져옴
 
         // 핸들러 실행 (try-catch로 크래시 방지)
         val handlerState = _currentState.value
@@ -507,7 +478,6 @@ class CallAcceptEngineImpl @Inject constructor(
                 Log.e(TAG, "로깅 실패 (무시): ${logException.message}")
             }
 
-            cachedRootNode = null  // 캐시 무효화
             return 200L
         } catch (e: SecurityException) {
             // Shizuku 권한 오류 - 더 강한 복구 로직
@@ -844,18 +814,7 @@ class CallAcceptEngineImpl @Inject constructor(
         currentRunnable = null
         timeoutRunnable = null
 
-        // 2. cachedRootNode recycle (Native 메모리 해제)
-        cachedRootNode?.let {
-            try {
-                it.recycle()
-                Log.d(TAG, "cachedRootNode recycled")
-            } catch (e: Exception) {
-                Log.w(TAG, "cachedRootNode recycle 실패: ${e.message}")
-            }
-        }
-        cachedRootNode = null
-
-        // 3. 상태 초기화
+        // 2. 상태 초기화
         _currentState.value = CallAcceptState.IDLE
         _isRunning.value = false
         _isPaused.value = false

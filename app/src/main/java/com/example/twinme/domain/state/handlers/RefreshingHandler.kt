@@ -50,6 +50,7 @@ class RefreshingHandler : StateHandler {
 
         // 3. 결과 반환
         return if (clickSuccess) {
+            // ⭐ 캐시 제거: 매번 fresh node를 가져오므로 강제 갱신 불필요
             Log.d(TAG, "✅ 새로고침 성공")
 
             StateResult.Transition(

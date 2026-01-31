@@ -104,13 +104,10 @@ data class StateContext(
     /**
      * 모달 감지용 - 매번 fresh node에서 텍스트 검색 (원본 APK 방식)
      * 2단계/3단계 버튼 클릭 후 모달 감지에 사용
-     * cachedRootNode가 아닌 getRootInActiveWindow()를 매번 호출
      */
     val hasFreshText: (text: String) -> Boolean = { text ->
         val service = com.example.twinme.service.CallAcceptAccessibilityService.instance
         val freshNode = service?.rootInActiveWindow
         freshNode?.findAccessibilityNodeInfosByText(text)?.isNotEmpty() == true
-    },
-
-
+    }
 )

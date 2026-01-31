@@ -88,14 +88,14 @@ IDLE → WAITING_FOR_CALL → LIST_DETECTED → REFRESHING → ANALYZING
 - **Main Loop**: Recursive `startMacroLoop()` → `executeStateMachineOnce()` → `scheduleNext()` pattern
 - **Timeout Handling**: 3-second timeout for most states, 7-second for WAITING_FOR_CONFIRM
 - **State-Specific Delays**: 10ms (WAITING_FOR_CALL, LIST_DETECTED), 30ms (REFRESHING), 50ms (ANALYZING, DETECTED_CALL)
-- **Node Caching**: Depends on `cachedRootNode` updated by accessibility events; if null, retries every 100ms
+- **Fresh Node Strategy**: Always fetches fresh `rootInActiveWindow` every cycle to prevent stale data issues; retries every 100ms if null
 
 **CallAcceptAccessibilityService** (`service/CallAcceptAccessibilityService.kt`)
 - Android `AccessibilityService` implementation with `@AndroidEntryPoint`
 - Injects `ICallEngine` via Hilt
 - Monitors `com.kakao.taxi.driver` package (configured in `res/xml/accessibility_service_config.xml`)
-- Forwards accessibility events to engine via `processNode()`
-- **Event-Driven Limitation**: Only updates `cachedRootNode` on `TYPE_WINDOW_CONTENT_CHANGED` or `TYPE_WINDOW_STATE_CHANGED` events. If KakaoT Driver app is already on call list screen when automation starts (no screen change), no event fires and node won't update until next UI change.
+- Forwards accessibility events to engine via `processNode()` (no-op; engine directly fetches fresh nodes)
+- **Fresh Node Approach**: Engine always calls `rootInActiveWindow` directly, eliminating stale node issues from event-driven caching
 - **Click Methods** (3-phase strategy):
   1. **Shizuku input tap** (Primary): Uses `input tap x y` via Shizuku for bot detection avoidance
   2. **performAction** (Secondary): Standard accessibility click via `ACTION_CLICK`
