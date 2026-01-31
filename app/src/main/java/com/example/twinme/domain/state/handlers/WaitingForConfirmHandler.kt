@@ -49,6 +49,7 @@ class WaitingForConfirmHandler : StateHandler {
                 if (clickDialogConfirmButton(node, context)) {
                     resetState()
                     context.eligibleCall = null
+                    context.forceNodeRefresh = true  // ⭐ FIX: 다이얼로그 닫기 후 stale 노드 방지
                     return StateResult.Transition(CallAcceptState.LIST_DETECTED, "이미 배차 다이얼로그 닫음")
                 }
                 return StateResult.NoChange
@@ -65,6 +66,7 @@ class WaitingForConfirmHandler : StateHandler {
                 if (clickDialogConfirmButton(node, context)) {
                     resetState()
                     context.eligibleCall = null
+                    context.forceNodeRefresh = true  // ⭐ FIX: 다이얼로그 닫기 후 stale 노드 방지
                     return StateResult.Transition(CallAcceptState.LIST_DETECTED, "콜 취소 다이얼로그 닫음")
                 }
                 return StateResult.NoChange
@@ -125,6 +127,7 @@ class WaitingForConfirmHandler : StateHandler {
             )
             if (clickDialogConfirmButton(node, context)) {
                 context.eligibleCall = null
+                context.forceNodeRefresh = true  // ⭐ FIX: stale 노드 방지
                 return StateResult.Transition(CallAcceptState.LIST_DETECTED, "이미 배차 다이얼로그 닫음")
             }
             // 버튼 못 찾으면 에러 처리
@@ -146,6 +149,7 @@ class WaitingForConfirmHandler : StateHandler {
             )
             if (clickDialogConfirmButton(node, context)) {
                 context.eligibleCall = null
+                context.forceNodeRefresh = true  // ⭐ FIX: stale 노드 방지
                 return StateResult.Transition(CallAcceptState.LIST_DETECTED, "콜 취소 다이얼로그 닫음")
             }
             // 버튼 못 찾으면 에러 처리
