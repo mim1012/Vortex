@@ -50,10 +50,7 @@ class RefreshingHandler : StateHandler {
 
         // 3. 결과 반환
         return if (clickSuccess) {
-            // ⭐ 새로고침 후 노드 강제 갱신 요청
-            // UI가 변경되지 않아도 엔진이 최신 rootNode를 다시 읽도록 플래그 설정
-            context.forceNodeRefresh = true
-            Log.d(TAG, "✅ 새로고침 성공 - 노드 강제 갱신 요청")
+            Log.d(TAG, "✅ 새로고침 성공")
 
             StateResult.Transition(
                 CallAcceptState.ANALYZING,

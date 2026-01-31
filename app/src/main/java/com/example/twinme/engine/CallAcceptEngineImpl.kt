@@ -96,11 +96,7 @@ class CallAcceptEngineImpl @Inject constructor(
      */
     private var lastRefreshTime = 0L
 
-    /**
-     * 현재 처리 중인 rootNode (캐시)
-     * AccessibilityService에서 업데이트됨
-     */
-    private var cachedRootNode: AccessibilityNodeInfo? = null
+
 
     /**
      * StateContext - 상태 핸들러 간 데이터 공유
@@ -129,10 +125,10 @@ class CallAcceptEngineImpl @Inject constructor(
         StateContext(
             applicationContext = context,
             findNode = { _, viewId ->
-                cachedRootNode?.let { findNodeByViewId(it, viewId) }
+                com.example.twinme.service.CallAcceptAccessibilityService.instance?.rootInActiveWindow?.let { findNodeByViewId(it, viewId) }
             },
             findNodeByText = { _, text ->
-                cachedRootNode?.let { findNodeByText(it, text) }
+                com.example.twinme.service.CallAcceptAccessibilityService.instance?.rootInActiveWindow?.let { findNodeByText(it, text) }
             },
             logger = logger,
             filterSettings = filterSettings,
@@ -235,8 +231,8 @@ class CallAcceptEngineImpl @Inject constructor(
      * 메인 루프에서 사용할 rootNode를 캐시에 저장
      */
     override fun processNode(node: AccessibilityNodeInfo) {
-        // rootNode 캐시 업데이트 (메인 루프에서 사용)
-        cachedRootNode = node
+        // 노드 캐싱 제거: 매번 getRootInActiveWindow()로 fresh node 가져오도록 수정
+        // 이 메서드는 더 이상 사용되지 않음
     }
 
     /**

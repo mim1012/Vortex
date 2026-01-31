@@ -112,10 +112,5 @@ data class StateContext(
         freshNode?.findAccessibilityNodeInfosByText(text)?.isNotEmpty() == true
     },
 
-    /**
-     * ⭐ 새로고침 후 노드 강제 갱신 플래그
-     * RefreshingHandler가 새로고침 성공 시 true로 설정
-     * 엔진이 다음 사이클에서 rootInActiveWindow를 강제로 다시 읽음
-     */
-    var forceNodeRefresh: Boolean = false
+
 )
