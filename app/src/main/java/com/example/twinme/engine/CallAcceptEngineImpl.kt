@@ -46,6 +46,14 @@ class CallAcceptEngineImpl @Inject constructor(
         private const val TIMEOUT_CONFIRM_MS = 7000L            // WAITING_FOR_CONFIRM만 7초 (원본 APK)
         private const val REFRESH_BUTTON_ID = "com.kakao.taxi.driver:id/action_refresh"
 
+        // ⭐ 캐시 노드 사용 상태 (LIST_DETECTED, REFRESHING, ANALYZING → 캐시, 나머지 → fresh)
+        private val CACHED_NODE_STATES = setOf(
+            CallAcceptState.LIST_DETECTED,
+            CallAcceptState.REFRESHING,
+            CallAcceptState.ANALYZING,
+            CallAcceptState.WAITING_FOR_CALL
+        )
+
         private fun isNodeValid(node: AccessibilityNodeInfo?): Boolean {
             return node != null && try {
                 node.childCount
@@ -79,6 +87,9 @@ class CallAcceptEngineImpl @Inject constructor(
     private val handlerMap: Map<CallAcceptState, StateHandler> by lazy {
         handlers.associateBy { it.targetState }
     }
+
+    // ⭐ 캐시 노드 (LIST_DETECTED/REFRESHING/ANALYZING에서 재사용, CLICKING_ITEM 진입 시 초기화)
+    private var cachedRootNode: AccessibilityNodeInfo? = null
 
     // ============================================
     // 새로 추가: 메인 루프 관련 필드 (원본 APK 기준)
@@ -278,9 +289,16 @@ class CallAcceptEngineImpl @Inject constructor(
             return
         }
 
-        // 2. ⭐ 매번 fresh rootNode 가져오기 (stale 데이터 문제 방지)
+        // 2. ⭐ 상태에 따라 캐시/fresh 노드 선택
         val service = com.example.twinme.service.CallAcceptAccessibilityService.instance
-        val rootNode = service?.rootInActiveWindow
+        val useCached = _currentState.value in CACHED_NODE_STATES
+        val rootNode = if (useCached && isNodeValid(cachedRootNode)) {
+            cachedRootNode
+        } else {
+            val fresh = service?.rootInActiveWindow
+            cachedRootNode = fresh  // 캐시 갱신
+            fresh
+        }
 
         // 2-1. rootNode가 null이면 재시도
         if (rootNode == null) {
@@ -678,6 +696,11 @@ class CallAcceptEngineImpl @Inject constructor(
         }
 
         _currentState.value = newState
+
+        // ⭐ 캐시 노드 초기화: CACHED_NODE_STATES 밖으로 전환 시 fresh node 사용
+        if (newState !in CACHED_NODE_STATES) {
+            cachedRootNode = null
+        }
 
         // ⭐⭐⭐ eligibleCall 초기화 조건 (중요!)
         //
