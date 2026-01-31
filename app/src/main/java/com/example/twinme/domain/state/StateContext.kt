@@ -109,5 +109,12 @@ data class StateContext(
         val service = com.example.twinme.service.CallAcceptAccessibilityService.instance
         val freshNode = service?.rootInActiveWindow
         freshNode?.findAccessibilityNodeInfosByText(text)?.isNotEmpty() == true
-    }
+    },
+
+    /**
+     * 이미배차/콜취소 시 동작 모드
+     * true: pause → IDLE (정상 수락과 동일하게 멈춤, 수동 resume 필요)
+     * false: 자동으로 LIST_DETECTED → 다음 콜 탐색 (기본값)
+     */
+    var pauseOnFail: Boolean = false
 )

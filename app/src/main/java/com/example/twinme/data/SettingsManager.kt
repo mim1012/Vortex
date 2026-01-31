@@ -38,6 +38,7 @@ class SettingsManager(context: Context) : IFilterSettings, ITimeSettings, IUiSet
         private const val KEY_REFRESH_DELAY = "refresh_delay"
         private const val KEY_CLICK_EFFECT_ENABLED = "click_effect_enabled"
         private const val KEY_ALLOW_HOURLY_RESERVATION = "allow_hourly_reservation"
+        private const val KEY_PAUSE_ON_FAIL = "pause_on_fail"  // 이미배차/콜취소 시 일시정지 여부
 
         // 싱글톤
         @Volatile
@@ -164,6 +165,21 @@ class SettingsManager(context: Context) : IFilterSettings, ITimeSettings, IUiSet
             prefs.edit().putBoolean(KEY_ALLOW_HOURLY_RESERVATION, value).apply()
             if (oldValue != value) {
                 RemoteLogger.logConfigChange("allow_hourly_reservation", oldValue, value)
+            }
+        }
+
+    /**
+     * 이미배차/콜취소 시 동작 설정
+     * true: pause → IDLE (수동 resume 필요)
+     * false: 자동으로 LIST_DETECTED → 다음 콜 탐색 (기본값)
+     */
+    var pauseOnFail: Boolean
+        get() = prefs.getBoolean(KEY_PAUSE_ON_FAIL, false)
+        set(value) {
+            val oldValue = pauseOnFail
+            prefs.edit().putBoolean(KEY_PAUSE_ON_FAIL, value).apply()
+            if (oldValue != value) {
+                RemoteLogger.logConfigChange("pause_on_fail", oldValue, value)
             }
         }
 
