@@ -865,6 +865,8 @@ object RemoteLogger {
 
                 val payload = mutableMapOf<String, Any>(
                     "app_name" to "Vortex",
+                    "app_flavor" to com.example.twinme.BuildConfig.FLAVOR,
+                    "pause_on_fail" to com.example.twinme.BuildConfig.PAUSE_ON_FAIL,
                     "app_version" to getAppVersion(ctx),
                     "phone_number" to maskIdentifier(phoneNumber),
                     "device_id" to deviceId,

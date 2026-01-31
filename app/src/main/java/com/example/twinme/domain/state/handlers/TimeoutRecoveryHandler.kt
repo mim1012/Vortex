@@ -56,7 +56,6 @@ class TimeoutRecoveryHandler : StateHandler {
             Log.d(TAG, "예약콜 리스트로 복귀 완료 (BACK: ${backPressCount}회, 경과: ${elapsedMs}ms)")
 
             context.eligibleCall = null  // ⭐⭐⭐ v1.4 복원: 오래된 콜 정보 제거
-            context.forceNodeRefresh = true  // ⭐ FIX: 복구 후 stale 노드 방지
 
             // ⭐ 복구 추적 변수 리셋
             recoveryStartTime = 0L

@@ -56,6 +56,23 @@ android {
     }
     buildFeatures {
         viewBinding true
+        buildConfig true
+    }
+
+    flavorDimensions "mode"
+    productFlavors {
+        pause {
+            dimension "mode"
+            applicationIdSuffix ".pause"
+            resValue "string", "app_name", "Vortex P"
+            buildConfigField "boolean", "PAUSE_ON_FAIL", "true"
+        }
+        auto {
+            dimension "mode"
+            applicationIdSuffix ".auto"
+            resValue "string", "app_name", "Vortex A"
+            buildConfigField "boolean", "PAUSE_ON_FAIL", "false"
+        }
     }
 }
 
