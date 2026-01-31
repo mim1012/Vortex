@@ -204,7 +204,7 @@ class AnalyzingHandler : StateHandler {
 
             // ⭐ 원본 APK 방식: 조건 충족 콜 없음 - 시간 기반 재시도
             val elapsed = System.currentTimeMillis() - stateStartTime
-            if (elapsed >= MAX_ANALYZING_DURATION_MS) {
+            return if (elapsed >= MAX_ANALYZING_DURATION_MS) {
                 // 200ms 지남 - 포기
                 Log.d(TAG, "조건 충족 콜 없음 - 200ms 경과, WAITING_FOR_CALL로 복귀")
                 stateStartTime = 0L  // 리셋
