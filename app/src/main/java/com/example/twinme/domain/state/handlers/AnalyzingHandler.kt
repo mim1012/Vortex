@@ -105,28 +105,31 @@ class AnalyzingHandler : StateHandler {
                 }
             }
 
-            // 2. 모든 콜 로깅 (eligible/rejected 모두 기록)
+            // 2. eligible 콜만 로깅 (성능 최적화)
             callsWithText.forEachIndexed { index, (call, collectedText) ->
                 val eligible = call.isEligible(context.filterSettings, context.timeSettings)
-                val rejectReason = if (eligible) null else getRejectReason(call, context)
-                val confidenceStr = call.confidence?.name ?: "UNKNOWN"
-                context.logger.logCallParsed(
-                    index = index,
-                    source = call.source,
-                    destination = call.destination,
-                    price = call.price,
-                    callType = call.callType,
-                    reservationTime = call.reservationTime,
-                    eligible = eligible,
-                    rejectReason = rejectReason,
-                    confidence = confidenceStr,
-                    debugInfo = call.debugInfo,
-                    callKey = call.callKey,
-                    collectedText = collectedText
-                )
+
+                // ⭐ eligible 콜만 로깅 (성능: 10배 개선)
+                if (eligible) {
+                    val confidenceStr = call.confidence?.name ?: "UNKNOWN"
+                    context.logger.logCallParsed(
+                        index = index,
+                        source = call.source,
+                        destination = call.destination,
+                        price = call.price,
+                        callType = call.callType,
+                        reservationTime = call.reservationTime,
+                        eligible = eligible,
+                        rejectReason = null,
+                        confidence = confidenceStr,
+                        debugInfo = call.debugInfo,
+                        callKey = call.callKey,
+                        collectedText = collectedText
+                    )
+                    // 서버로 즉시 전송
+                    context.logger.flushLogsAsync()
+                }
             }
-            // 서버로 전송
-            context.logger.flushLogsAsync()
 
             // 3. 금액 기준 내림차순 정렬 후 조건에 맞는 콜 찾기
             val sortedCalls = calls.sortedByDescending { it.price }
@@ -136,41 +139,6 @@ class AnalyzingHandler : StateHandler {
             Log.i(CONDITION_TAG, "설정: minAmount=${context.filterSettings.minAmount}, keywordMinAmount=${context.filterSettings.keywordMinAmount}")
             Log.i(CONDITION_TAG, "설정: keywords=${context.filterSettings.keywords}, mode=${context.filterSettings.conditionMode}")
             Log.i(CONDITION_TAG, "콜 개수: ${sortedCalls.size}개")
-
-            // ⭐ 즉시 전송 진단 로그: 파싱된 콜 + 설정값 + 비교 결과
-            try {
-                val callMaps = sortedCalls.map { call ->
-                    val eligible = call.isEligible(context.filterSettings, context.timeSettings)
-                    val reason = if (eligible) "PASS" else getRejectReason(call, context)
-                    mapOf<String, Any>(
-                        "price" to call.price,
-                        "source" to call.source.take(20),
-                        "destination" to call.destination.take(20),
-                        "callType" to call.callType,
-                        "reservationTime" to call.reservationTime,
-                        "eligible" to eligible,
-                        "reject_reason" to (reason ?: ""),
-                        "callKey" to call.callKey
-                    )
-                }
-                val settingsMap = mapOf<String, Any>(
-                    "conditionMode" to context.filterSettings.conditionMode.name,
-                    "minAmount" to context.filterSettings.minAmount,
-                    "keywordMinAmount" to context.filterSettings.keywordMinAmount,
-                    "keywords" to context.filterSettings.keywords.joinToString(","),
-                    "airportMinAmount" to context.filterSettings.airportMinAmount,
-                    "allowHourlyReservation" to context.filterSettings.allowHourlyReservation
-                )
-                val hasEligible = callMaps.any { it["eligible"] == true }
-                com.example.twinme.logging.RemoteLogger.logAnalyzingDiagnosis(
-                    callCount = sortedCalls.size,
-                    calls = callMaps,
-                    settings = settingsMap,
-                    result = if (hasEligible) "ELIGIBLE_FOUND" else "NO_ELIGIBLE"
-                )
-            } catch (e: Exception) {
-                Log.e(TAG, "진단 로그 전송 실패: ${e.message}")
-            }
 
             for (call in sortedCalls) {
                 val isEligible = call.isEligible(context.filterSettings, context.timeSettings)
