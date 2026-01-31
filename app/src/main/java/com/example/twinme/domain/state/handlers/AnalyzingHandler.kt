@@ -58,7 +58,15 @@ class AnalyzingHandler : StateHandler {
             // ⭐ 상태 진입 시 시작 시간 기록 (원본 APK 방식)
             if (stateStartTime == 0L) {
                 stateStartTime = System.currentTimeMillis()
-                Log.i(TAG, "🔍 [ANALYZING] 상태 시작 - eligibleCall=${context.eligibleCall?.callKey ?: "null"}")
+                
+                // ⭐⭐⭐ FIX: ANALYZING 진입 시 무조건 eligibleCall 초기화
+                // 이유: 콜 취소/배차 완료 후 캐시된 eligibleCall이 재사용되는 버그 방지
+                if (context.eligibleCall != null) {
+                    Log.w(TAG, "🔍 [ANALYZING] 캐시된 eligibleCall 제거: ${context.eligibleCall?.callKey}")
+                    context.eligibleCall = null
+                }
+                
+                Log.i(TAG, "🔍 [ANALYZING] 상태 시작 - eligibleCall 초기화 완료")
             } else {
                 val elapsed = System.currentTimeMillis() - stateStartTime
                 Log.i(TAG, "🔍 [ANALYZING] 재진입 - elapsed=${elapsed}ms, eligibleCall=${context.eligibleCall?.callKey ?: "null"}")
