@@ -2,6 +2,7 @@ package com.example.twinme.domain.state.handlers
 
 import android.util.Log
 import android.view.accessibility.AccessibilityNodeInfo
+import com.example.twinme.BuildConfig
 import com.example.twinme.data.CallAcceptState
 import com.example.twinme.domain.state.StateContext
 import com.example.twinme.domain.state.StateHandler
@@ -20,7 +21,7 @@ import com.example.twinme.domain.state.StateResult
 class ClickingItemHandler : StateHandler {
     companion object {
         private const val TAG = "ClickingItemHandler"
-        private const val MAX_RETRY = 3  // 최대 3회 재시도
+        private const val MAX_RETRY = 1  // 최대 1회 시도
     }
 
     /**
@@ -69,11 +70,9 @@ class ClickingItemHandler : StateHandler {
         if (node.findAccessibilityNodeInfosByText("이미 배차").isNotEmpty()) {
             Log.d(TAG, "이미 배차 다이얼로그 감지 - 확인 버튼 클릭 시도")
             retryCount = 0
-            context.eligibleCall = null  // ⭐⭐⭐ v1.4 복원: 오래된 콜 정보 제거
-            if (clickDialogConfirmButton(node)) {
-                return StateResult.Transition(CallAcceptState.LIST_DETECTED, "이미 배차 다이얼로그 닫음")
-            }
-            return StateResult.Error(CallAcceptState.ERROR_ASSIGNED, "이미 배차됨")
+            context.eligibleCall = null
+            clickDialogConfirmButton(node)
+            return failResult("이미 배차 다이얼로그 닫음 (CLICKING_ITEM)")
         }
 
         // "콜이 취소되었습니다" 감지 → 다이얼로그 확인 버튼 클릭
@@ -81,10 +80,8 @@ class ClickingItemHandler : StateHandler {
             Log.d(TAG, "콜 취소 다이얼로그 감지 - 확인 버튼 클릭 시도")
             retryCount = 0
             context.eligibleCall = null
-            if (clickDialogConfirmButton(node)) {
-                return StateResult.Transition(CallAcceptState.LIST_DETECTED, "콜 취소 다이얼로그 닫음")
-            }
-            return StateResult.Error(CallAcceptState.ERROR_ASSIGNED, "콜이 취소됨")
+            clickDialogConfirmButton(node)
+            return failResult("콜 취소 다이얼로그 닫음 (CLICKING_ITEM)")
         }
 
         val eligibleCall = context.eligibleCall
@@ -148,6 +145,24 @@ class ClickingItemHandler : StateHandler {
                 return StateResult.Error(CallAcceptState.ERROR_UNKNOWN, "콜 클릭 실패")
             }
             return StateResult.NoChange
+        }
+    }
+
+    /**
+     * 이미배차/콜취소 후 동작 분기 (Build Flavor로 결정)
+     * pause flavor: PauseAndTransition → IDLE (수동 resume 필요)
+     * auto flavor: Transition → LIST_DETECTED (다음 콜 자동 탐색)
+     */
+    private fun failResult(reason: String): StateResult {
+        com.example.twinme.logging.RemoteLogger.logError(
+            errorType = "FAIL_ACTION",
+            message = "$reason → ${if (BuildConfig.PAUSE_ON_FAIL) "PAUSE→IDLE" else "ERROR_ASSIGNED"}",
+            stackTrace = "flavor=${BuildConfig.FLAVOR}, PAUSE_ON_FAIL=${BuildConfig.PAUSE_ON_FAIL}, handler=ClickingItemHandler"
+        )
+        return if (BuildConfig.PAUSE_ON_FAIL) {
+            StateResult.PauseAndTransition(CallAcceptState.IDLE, "$reason → 일시정지")
+        } else {
+            StateResult.Transition(CallAcceptState.LIST_DETECTED, reason)
         }
     }
 

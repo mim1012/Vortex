@@ -4,6 +4,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.accessibility.AccessibilityNodeInfo
+import com.example.twinme.BuildConfig
 import com.example.twinme.data.CallAcceptState
 import com.example.twinme.domain.state.StateContext
 import com.example.twinme.domain.state.StateHandler
@@ -52,47 +53,19 @@ class DetectedCallHandler : StateHandler {
             // 2. "이미 배차" 확인 → 다이얼로그 확인 버튼 클릭 (fresh node 사용)
             if (context.hasFreshText("이미 배차")) {
                 Log.d(TAG, "이미 배차 다이얼로그 감지 (fresh node) - 확인 버튼 클릭 시도")
-                com.example.twinme.logging.RemoteLogger.logError(
-                    errorType = "DIALOG_ASSIGNED",
-                    message = "이미 배차 다이얼로그 감지 (클릭 후 대기 중)",
-                    stackTrace = "callKey: ${context.eligibleCall?.callKey}"
-                )
-                if (clickDialogConfirmButton(node, context)) {
-                    resetState()
-                    context.eligibleCall = null
-                    com.example.twinme.logging.RemoteLogger.logError(
-                        errorType = "DIALOG_ASSIGNED_CLOSED",
-                        message = "이미 배차 다이얼로그 확인 버튼 클릭 → LIST_DETECTED 복귀",
-                        stackTrace = ""
-                    )
-                    // 다이얼로그 닫힌 후 리스트로 복귀
-                    return StateResult.Transition(CallAcceptState.LIST_DETECTED, "이미 배차 다이얼로그 닫음")
-                }
-                // 버튼 못 찾으면 계속 대기
-                return StateResult.NoChange
+                clickDialogConfirmButton(node, context)
+                resetState()
+                context.eligibleCall = null
+                return failResult("이미 배차 다이얼로그 닫음 (DETECTED_CALL 대기중)")
             }
 
             // 3. "콜이 취소되었습니다" 확인 → 다이얼로그 확인 버튼 클릭 (fresh node 사용)
             if (context.hasFreshText("콜이 취소")) {
                 Log.d(TAG, "콜 취소 다이얼로그 감지 (fresh node) - 확인 버튼 클릭 시도")
-                com.example.twinme.logging.RemoteLogger.logError(
-                    errorType = "DIALOG_CANCELLED",
-                    message = "콜 취소 다이얼로그 감지 (클릭 후 대기 중)",
-                    stackTrace = "callKey: ${context.eligibleCall?.callKey}"
-                )
-                if (clickDialogConfirmButton(node, context)) {
-                    resetState()
-                    context.eligibleCall = null
-                    com.example.twinme.logging.RemoteLogger.logError(
-                        errorType = "DIALOG_CANCELLED_CLOSED",
-                        message = "콜 취소 다이얼로그 확인 버튼 클릭 → LIST_DETECTED 복귀",
-                        stackTrace = ""
-                    )
-                    // 다이얼로그 닫힌 후 리스트로 복귀
-                    return StateResult.Transition(CallAcceptState.LIST_DETECTED, "콜 취소 다이얼로그 닫음")
-                }
-                // 버튼 못 찾으면 계속 대기
-                return StateResult.NoChange
+                clickDialogConfirmButton(node, context)
+                resetState()
+                context.eligibleCall = null
+                return failResult("콜 취소 다이얼로그 닫음 (DETECTED_CALL 대기중)")
             }
 
             // 4. 재시도 카운트 증가
@@ -144,45 +117,17 @@ class DetectedCallHandler : StateHandler {
         // "이미 배차" 감지 → 다이얼로그 확인 버튼 클릭
         if (node.findAccessibilityNodeInfosByText("이미 배차").isNotEmpty()) {
             Log.d(TAG, "이미 배차 다이얼로그 감지 (클릭 전) - 확인 버튼 클릭 시도")
-            com.example.twinme.logging.RemoteLogger.logError(
-                errorType = "DIALOG_ASSIGNED",
-                message = "이미 배차 다이얼로그 감지 (클릭 전)",
-                stackTrace = "callKey: ${context.eligibleCall?.callKey}"
-            )
-            if (clickDialogConfirmButton(node, context)) {
-                context.eligibleCall = null
-                com.example.twinme.logging.RemoteLogger.logError(
-                    errorType = "DIALOG_ASSIGNED_CLOSED",
-                    message = "이미 배차 다이얼로그 확인 버튼 클릭 (클릭 전) → LIST_DETECTED 복귀",
-                    stackTrace = ""
-                )
-                return StateResult.Transition(CallAcceptState.LIST_DETECTED, "이미 배차 다이얼로그 닫음")
-            }
-            // 버튼 못 찾으면 에러 처리
+            clickDialogConfirmButton(node, context)
             context.eligibleCall = null
-            return StateResult.Error(CallAcceptState.ERROR_ASSIGNED, "이미 배차됨")
+            return failResult("이미 배차 다이얼로그 닫음 (DETECTED_CALL 클릭전)")
         }
 
         // "콜이 취소되었습니다" 감지 → 다이얼로그 확인 버튼 클릭
         if (node.findAccessibilityNodeInfosByText("콜이 취소되었습니다").isNotEmpty()) {
             Log.d(TAG, "콜 취소 다이얼로그 감지 (클릭 전) - 확인 버튼 클릭 시도")
-            com.example.twinme.logging.RemoteLogger.logError(
-                errorType = "DIALOG_CANCELLED",
-                message = "콜 취소 다이얼로그 감지 (클릭 전)",
-                stackTrace = "callKey: ${context.eligibleCall?.callKey}"
-            )
-            if (clickDialogConfirmButton(node, context)) {
-                context.eligibleCall = null
-                com.example.twinme.logging.RemoteLogger.logError(
-                    errorType = "DIALOG_CANCELLED_CLOSED",
-                    message = "콜 취소 다이얼로그 확인 버튼 클릭 (클릭 전) → LIST_DETECTED 복귀",
-                    stackTrace = ""
-                )
-                return StateResult.Transition(CallAcceptState.LIST_DETECTED, "콜 취소 다이얼로그 닫음")
-            }
-            // 버튼 못 찾으면 에러 처리
+            clickDialogConfirmButton(node, context)
             context.eligibleCall = null
-            return StateResult.Error(CallAcceptState.ERROR_ASSIGNED, "콜이 취소됨")
+            return failResult("콜 취소 다이얼로그 닫음 (DETECTED_CALL 클릭전)")
         }
 
         // 버튼 검색 (View ID → 텍스트)
@@ -260,6 +205,24 @@ class DetectedCallHandler : StateHandler {
         waitRetryCount = 0
         Log.i("CONDITION", "🔘 [DETECTED] btn_call_accept 클릭 완료 - 다이얼로그 대기 시작 (callKey: ${context.eligibleCall?.callKey})")
         return StateResult.NoChange
+    }
+
+    /**
+     * 이미배차/콜취소 후 동작 분기 (Build Flavor로 결정)
+     * pause flavor: PauseAndTransition → IDLE (수동 resume 필요)
+     * auto flavor: Transition → LIST_DETECTED (다음 콜 자동 탐색)
+     */
+    private fun failResult(reason: String): StateResult {
+        com.example.twinme.logging.RemoteLogger.logError(
+            errorType = "FAIL_ACTION",
+            message = "$reason → ${if (BuildConfig.PAUSE_ON_FAIL) "PAUSE→IDLE" else "ERROR_ASSIGNED"}",
+            stackTrace = "flavor=${BuildConfig.FLAVOR}, PAUSE_ON_FAIL=${BuildConfig.PAUSE_ON_FAIL}, handler=DetectedCallHandler"
+        )
+        return if (BuildConfig.PAUSE_ON_FAIL) {
+            StateResult.PauseAndTransition(CallAcceptState.IDLE, "$reason → 일시정지")
+        } else {
+            StateResult.Transition(CallAcceptState.LIST_DETECTED, reason)
+        }
     }
 
     /**
